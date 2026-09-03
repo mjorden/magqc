@@ -24,4 +24,26 @@ test_that("qc_report renders a self-contained HTML file", {
   expect_true(any(grepl("Scorecard", html)))
   expect_true(any(grepl("leaflet", html)))
   expect_false(dir.exists(sub("\\.html$", "_files", out)))
+  # size budget (#15): with the full plotly bundle the demo report is < 6 MB,
+  # with the partial bundle ~3 MB; either way well under the 8.6 MB it was
+  expect_lt(file.size(out), 6e6)
+})
+
+test_that("diagnostic traces are one per line without per-point labels (#15)", {
+  res <- run_qc(sim_survey(seed = 5))
+  b <- plotly::plotly_build(plot_fourth_difference(res))$x$data
+  lines <- vapply(b, function(t) t$mode == "lines", logical(1))
+  expect_equal(sum(lines), nrow(res$lines))
+  expect_true(all(vapply(b[lines], function(t) is.null(t$text) && t$type == "scatter", logical(1))))
+  # no NA gap rows: the traces hold exactly one point per finite sample
+  # (plotly_build drops the NA fourth differences at each segment end)
+  expect_equal(sum(vapply(b[lines], function(t) length(t$y), integer(1))), sum(!is.na(res$fourth_difference)))
+  # times are strings (numeric epoch ms would render in the viewer's local zone)
+  expect_true(all(vapply(b[lines], function(t) is.character(t$x) && grepl("^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d$", t$x[1]), logical(1))))
+  cl <- plotly::plotly_build(plot_clearance(res))$x$data
+  n_pts <- sum(vapply(cl[vapply(cl, function(t) t$mode == "lines", logical(1))], function(t) length(t$y), integer(1)))
+  expect_lt(n_pts, nrow(res$survey) / 2)                       # decimated
+  expect_gt(n_pts, nrow(res$survey) / 4)
+  withr::local_options(magqc.partial_bundle = FALSE)
+  expect_identical(magqc:::.slim(plot_diurnal(res))$dependencies, plot_diurnal(res)$dependencies)
 })

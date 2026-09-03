@@ -100,7 +100,8 @@ cat('</tbody></table>')
 Toggle each check's layer in the control at the top right; click any flagged interval or marker for details.
 
 ```{r map}
-magqc::qc_map(res)
+m <- magqc::qc_map(res)
+if (inherits(m, "plotly")) magqc:::.slim(m) else m
 ```
 
 ## Flagged intervals
@@ -123,7 +124,7 @@ if (nrow(tbl)) {
 Computed on the despiked, diurnal-corrected field; dotted lines are the acceptance limit.
 
 ```{r d4}
-magqc::plot_fourth_difference(res)
+magqc:::.slim(magqc::plot_fourth_difference(res))
 ```
 
 ```{r clearance-hdr, results="asis"}
@@ -131,7 +132,7 @@ if (!all(is.na(res$survey$radar_alt))) cat("### Terrain clearance\n\nShaded band
 ```
 
 ```{r clearance}
-if (!all(is.na(res$survey$radar_alt))) magqc::plot_clearance(res)
+if (!all(is.na(res$survey$radar_alt))) magqc:::.slim(magqc::plot_clearance(res))
 ```
 
 ```{r diurnal-hdr, results="asis"}
@@ -139,7 +140,7 @@ if (!is.null(res$diurnal)) cat("### Base station\n\nShaded windows exceed the ch
 ```
 
 ```{r diurnal}
-if (!is.null(res$diurnal)) magqc::plot_diurnal(res)
+if (!is.null(res$diurnal)) magqc:::.slim(magqc::plot_diurnal(res))
 ```
 
 ```{r xo-hdr, results="asis"}
@@ -147,7 +148,7 @@ if (nrow(res$crossovers)) cat("### Crossover misfit\n\nTraverse minus tie at eac
 ```
 
 ```{r crossovers}
-if (nrow(res$crossovers)) magqc::plot_crossovers(res)
+if (nrow(res$crossovers)) magqc:::.slim(magqc::plot_crossovers(res))
 ```
 
 ## Lines

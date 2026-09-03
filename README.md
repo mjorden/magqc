@@ -83,6 +83,13 @@ different threshold.
 - diagnostics: fourth-difference trace against its limit, terrain clearance against its band, the base-station record with exceedance windows shaded, and crossover misfit by flight direction
 - per-line statistics and the specification the survey was tested against
 
+The demo report (17,500 samples) is under 4 MB. Diagnostic traces are one
+per line with rounded values and tenth-of-a-second UTC timestamps (kept as
+strings: plotly renders numeric dates in the viewer's local zone), and
+plotly's ~1 MB "basic" bundle is fetched at render time in place of the
+full 3.7 MB library; offline, the full library is embedded and the file is
+~6.5 MB. Set `options(magqc.partial_bundle = FALSE)` to skip the fetch.
+
 ## Tie-line levelling
 
 ```r

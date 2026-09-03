@@ -14,15 +14,17 @@
 
 .font <- 'system-ui, -apple-system, "Segoe UI", sans-serif'
 
-.plotly_base <- function(p, ytitle, xtitle = "time (UTC)") {
+.plotly_base <- function(p, ytitle, xtitle = "time (UTC)", date_axis = TRUE) {
+  xaxis <- list(title = xtitle, gridcolor = .pal$grid, zeroline = FALSE,
+                linecolor = .pal$axis, tickfont = list(color = .pal$muted))
+  if (date_axis) xaxis$type <- "date"
   plotly::layout(
     p,
     font = list(family = .font, color = .pal$ink2, size = 12),
     paper_bgcolor = .pal$surface, plot_bgcolor = .pal$surface,
     margin = list(l = 60, r = 20, t = 10, b = 45),
     hovermode = "x unified",
-    xaxis = list(title = xtitle, gridcolor = .pal$grid, zeroline = FALSE,
-                 linecolor = .pal$axis, tickfont = list(color = .pal$muted)),
+    xaxis = xaxis,
     yaxis = list(title = ytitle, gridcolor = .pal$grid, zeroline = FALSE,
                  linecolor = .pal$axis, tickfont = list(color = .pal$muted)),
     legend = list(orientation = "h", x = 0, y = 1.08, font = list(color = .pal$ink2)))
@@ -154,7 +156,7 @@ qc_map <- function(result, decimate = 5) {
   p <- plotly::plot_ly()
   for (typ in c("traverse", "tie")) {
     dd <- d[d$line_type == typ | is.na(d$line_type), ]
-    p <- plotly::add_trace(p, data = dd, x = ~x, y = ~y, type = "scattergl", mode = "lines",
+    p <- plotly::add_trace(p, data = dd, x = ~x, y = ~y, type = "scatter", mode = "lines",
                            line = list(color = if (typ == "tie") .pal$tie else .pal$traverse, width = 1.5),
                            text = ~line, hoverinfo = "text", name = paste(typ, "lines"))
   }
@@ -164,7 +166,7 @@ qc_map <- function(result, decimate = 5) {
     idx <- unlist(lapply(which(!is.na(f$i_start)), function(r) c(f$i_start[r]:f$i_end[r], NA)))
     if (length(idx)) {
       seg <- s[idx, ]
-      p <- plotly::add_trace(p, data = seg, x = ~x, y = ~y, type = "scattergl", mode = "lines+markers",
+      p <- plotly::add_trace(p, data = seg, x = ~x, y = ~y, type = "scatter", mode = "lines+markers",
                              line = list(color = .pal$critical, width = 5),
                              marker = list(color = .pal$critical, size = 6),
                              hoverinfo = "text", text = rep(f$description[!is.na(f$i_start)][1], nrow(seg)),
@@ -172,14 +174,14 @@ qc_map <- function(result, decimate = 5) {
     }
     ff <- f[is.na(f$i_start) & is.finite(f$x), ]
     if (nrow(ff)) {
-      p <- plotly::add_trace(p, data = ff, x = ~x, y = ~y, type = "scattergl", mode = "markers",
+      p <- plotly::add_trace(p, data = ff, x = ~x, y = ~y, type = "scatter", mode = "markers",
                              marker = list(color = .pal$critical, size = 14,
                                            line = list(color = .pal$surface, width = 2)),
                              text = ~description, hoverinfo = "text",
                              name = sprintf("%s (%d)", reg$label[k], nrow(f)))
     }
   }
-  p <- .plotly_base(p, "northing (m)", "easting (m)")
+  p <- .plotly_base(p, "northing (m)", "easting (m)", date_axis = FALSE)
   plotly::layout(p, hovermode = "closest", yaxis = list(scaleanchor = "x", scaleratio = 1))
 }
 
@@ -198,22 +200,84 @@ qc_map <- function(result, decimate = 5) {
 #' @name diagnostics
 NULL
 
+#' Times for a plotly date axis, rendered in UTC
+#'
+#' Not epoch milliseconds: plotly.js shows numeric dates in the viewer's local
+#' zone, so a report opened in Denver would put the survey six hours away from
+#' its own base-station plot. Strings render as written; a tenth of a second
+#' is enough for a 10 Hz survey and saves six characters per sample over
+#' plotly's default microsecond format.
+#' @noRd
+.time_str <- function(time) format(time, "%Y-%m-%d %H:%M:%OS1", tz = "UTC")
+
+#' One trace per line, sized for a self-contained report
+#'
+#' A single trace over the whole survey needs a per-point line name for the
+#' hover and NA rows to break the line at turns, and the ISO timestamps and
+#' full-precision doubles dominate the report size (#15). One trace per line
+#' carries the name once (`%{fullData.name}` in the hover), needs no gap
+#' rows, and rounds `y` to what the units warrant. `decimate` thins smooth
+#' series; flagged samples are drawn separately at full resolution.
+#' @noRd
+.add_line_traces <- function(p, s, y, digits, hover_units, decimate = 1L, legend_name) {
+  first <- TRUE
+  for (idx in .by_line(s)) {
+    if (decimate > 1L) {
+      keep <- unique(c(seq(1L, length(idx), by = decimate), length(idx)))
+      idx <- idx[keep]
+    }
+    p <- plotly::add_trace(
+      p, x = .time_str(s$time[idx]), y = round(y[idx], digits), type = "scatter", mode = "lines",
+      line = list(color = .pal$traverse, width = 1), name = s$line[idx[1]],
+      legendgroup = legend_name, showlegend = first,
+      # I(): otherwise plotly recycles the template once per point (#15)
+      hovertemplate = I(paste0("%{fullData.name}: %{y:.", digits, "f} ", hover_units, "<extra></extra>")))
+    first <- FALSE
+  }
+  p
+}
+
+#' Shrink a plotly widget for the self-contained report (#15)
+#'
+#' Two things: the built widget carries `attrs` and `visdat` - the R-side
+#' inputs plotly used to build the traces, a second copy of every data
+#' vector that the JS binding never reads - so they are dropped; and the
+#' full plotly.js is 3.7 MB of an otherwise ~2 MB report, while the report's
+#' traces are all plain `scatter`, which the ~1 MB "basic" bundle covers.
+#' `partial_bundle()` downloads that bundle at render time, so an offline
+#' render falls back to the full library silently. Set
+#' `options(magqc.partial_bundle = FALSE)` to skip the download attempt (the
+#' `attrs` stripping still applies).
+#' @noRd
+.slim <- function(p) {
+  if (is.null(p)) return(p)
+  p <- plotly::plotly_build(p)
+  p$x$attrs <- NULL
+  p$x$visdat <- NULL
+  # plotly recycles a scalar hovertemplate to one copy per point (I() does not
+  # stop it); a constant vector collapses back to the scalar it came from
+  for (i in seq_along(p$x$data)) {
+    ht <- p$x$data[[i]]$hovertemplate
+    if (length(ht) > 1 && length(unique(ht)) == 1) p$x$data[[i]]$hovertemplate <- ht[[1]]
+  }
+  if (!isTRUE(getOption("magqc.partial_bundle", TRUE))) return(p)
+  tryCatch(suppressWarnings(plotly::partial_bundle(p, type = "basic", local = TRUE, minified = TRUE)),
+           error = function(e) p)
+}
+
 #' @rdname diagnostics
 #' @export
 plot_fourth_difference <- function(result) {
   s <- result$survey
   tol <- result$spec$fourth_diff_tol
-  d <- data.frame(line = s$line, time = s$time, d4 = result$fourth_difference)
-  bad <- d[.flag_mask(result, "fourth_difference"), ]
-  d <- .gap_between_lines(d)
+  d4 <- result$fourth_difference
+  bad <- .flag_mask(result, "fourth_difference")
   p <- plotly::plot_ly()
-  p <- plotly::add_trace(p, data = d, x = ~time, y = ~d4, type = "scattergl", mode = "lines",
-                         line = list(color = .pal$traverse, width = 1), name = "fourth difference",
-                         text = ~line, hovertemplate = "%{text}: %{y:.4f} nT<extra></extra>")
-  if (nrow(bad)) {
-    p <- plotly::add_trace(p, data = bad, x = ~time, y = ~d4, type = "scattergl", mode = "markers",
+  p <- .add_line_traces(p, s, d4, digits = 4, hover_units = "nT", legend_name = "fourth difference")
+  if (any(bad)) {
+    p <- plotly::add_trace(p, x = .time_str(s$time[bad]), y = round(d4[bad], 4), type = "scatter", mode = "markers",
                            marker = list(color = .pal$critical, size = 5), name = "exceeds limit",
-                           text = ~line, hovertemplate = "%{text}: %{y:.4f} nT<extra></extra>")
+                           text = s$line[bad], hovertemplate = I("%{text}: %{y:.4f} nT<extra></extra>"))
   }
   p <- .plotly_base(p, "fourth difference (nT)")
   plotly::layout(p, shapes = list(
@@ -230,17 +294,16 @@ plot_fourth_difference <- function(result) {
 #' @export
 plot_clearance <- function(result) {
   s <- result$survey; sp <- result$spec
-  d <- data.frame(line = s$line, time = s$time, alt = s$radar_alt)
-  bad <- d[.flag_mask(result, "clearance"), ]
-  d <- .gap_between_lines(d)
+  bad <- .flag_mask(result, "clearance")
   p <- plotly::plot_ly()
-  p <- plotly::add_trace(p, data = d, x = ~time, y = ~alt, type = "scattergl", mode = "lines",
-                         line = list(color = .pal$traverse, width = 1), name = "radar altimeter",
-                         text = ~line, hovertemplate = "%{text}: %{y:.1f} m<extra></extra>")
-  if (nrow(bad)) {
-    p <- plotly::add_trace(p, data = bad, x = ~time, y = ~alt, type = "scattergl", mode = "markers",
+  # the altimeter track is smooth at the sample scale; every third sample is
+  # plenty for the overview, and flagged samples are drawn in full below
+  p <- .add_line_traces(p, s, s$radar_alt, digits = 1, hover_units = "m", decimate = 3L,
+                        legend_name = "radar altimeter")
+  if (any(bad)) {
+    p <- plotly::add_trace(p, x = .time_str(s$time[bad]), y = round(s$radar_alt[bad], 1), type = "scatter", mode = "markers",
                            marker = list(color = .pal$critical, size = 5), name = "outside tolerance",
-                           text = ~line, hovertemplate = "%{text}: %{y:.1f} m<extra></extra>")
+                           text = s$line[bad], hovertemplate = I("%{text}: %{y:.1f} m<extra></extra>"))
   }
   p <- .plotly_base(p, "terrain clearance (m)")
   plotly::layout(p, shapes = list(
@@ -259,9 +322,9 @@ plot_diurnal <- function(result) {
   d <- result$diurnal
   if (is.null(d)) return(NULL)
   p <- plotly::plot_ly(d, x = ~time)
-  p <- plotly::add_trace(p, y = ~mag_base, type = "scattergl", mode = "lines",
+  p <- plotly::add_trace(p, y = ~round(mag_base, 2), type = "scatter", mode = "lines",
                          line = list(color = .pal$traverse, width = 1.5), name = "base station",
-                         customdata = ~chord_dev,
+                         customdata = ~round(chord_dev, 2),
                          hovertemplate = "%{y:.1f} nT  (chord departure %{customdata:.2f} nT)<extra></extra>")
   win <- .runs(d$exceed)
   shapes <- lapply(seq_len(nrow(win)), function(r) list(
@@ -324,7 +387,7 @@ plot_crossovers <- function(result) {
   rms_txt <- if (is.null(lev)) sprintf("RMS %.2f nT (limit %g)", rms, sp$max_crossover_rms) else
     sprintf("RMS %.2f nT before (limit %g), %.2f nT after %s levelling (limit %g)",
             rms, sp$max_crossover_rms, lev$rms[["after"]], lev$order, sp$max_levelled_rms)
-  p <- .plotly_base(p, "traverse - tie misfit (nT)", "crossover (ordered by traverse, tie)")
+  p <- .plotly_base(p, "traverse - tie misfit (nT)", "crossover (ordered by traverse, tie)", date_axis = FALSE)
   plotly::layout(
     p, hovermode = "closest",
     shapes = list(

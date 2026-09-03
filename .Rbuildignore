@@ -5,3 +5,7 @@
 ^README\.Rmd$
 ^man-roxygen$
 ^inst/examples$
+^tools$
+^site$
+^docs$
+^\.adversarial-review.*$

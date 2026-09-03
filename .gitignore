@@ -7,3 +7,6 @@ inst/doc
 docs/
 *.html
 !inst/rmarkdown/*.html
+.adversarial-review/
+.adversarial-review.yaml
+site/

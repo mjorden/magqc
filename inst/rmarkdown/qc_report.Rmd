@@ -106,18 +106,8 @@ magqc::qc_map(res)
 ## Flagged intervals
 
 ```{r flags}
-f <- res$flags
-if (nrow(f)) {
-  lab <- magqc:::.check_registry()
-  tbl <- data.frame(
-    check = lab$label[match(f$check, lab$check)],
-    line = ifelse(is.na(f$line), "survey-wide", f$line),
-    start = ifelse(is.na(f$time_start), "", format(f$time_start, "%H:%M:%S")),
-    end = ifelse(is.na(f$time_end), "", format(f$time_end, "%H:%M:%S")),
-    fid = ifelse(is.na(f$fid_start), "", ifelse(f$fid_end == f$fid_start, as.character(f$fid_start),
-                                                 paste0(f$fid_start, "–", f$fid_end))),
-    value = signif(f$value, 3), limit = signif(f$threshold, 3), units = f$units,
-    finding = f$description, stringsAsFactors = FALSE)
+tbl <- magqc::flag_table(res)
+if (nrow(tbl)) {
   DT::datatable(tbl, rownames = FALSE, filter = "top", class = "compact stripe",
                 options = list(pageLength = 15, order = list(list(0, "asc"), list(2, "asc")),
                                dom = "tip", autoWidth = FALSE))

@@ -82,6 +82,27 @@ different threshold.
 - diagnostics: fourth-difference trace against its limit, terrain clearance against its band, the base-station record with exceedance windows shaded, and crossover misfit by flight direction
 - per-line statistics and the specification the survey was tested against
 
+## Interactive viewer
+
+```r
+run_viewer()                       # simulated survey, editable spec
+run_viewer(res)                    # open an existing result
+```
+
+A Shiny app (bslib) with the same engine behind it: load the simulated
+survey or upload an XYZ file plus base-station CSV, edit every threshold in
+the sidebar, re-run, click a flight line on the map to open its profile
+(field, fourth difference and clearance against distance along the line,
+with every flagged interval shaded and labelled), browse the flag table,
+and download the report or the flags as CSV.
+
+The same app runs entirely in the browser via [shinylive](https://posit-dev.github.io/r-shinylive/)
+(webR) — no server. `tools/build-shinylive.R` vendors the package sources
+beside the app and exports a static site; the `viewer-pages` workflow
+publishes it to GitHub Pages on every push to `main`. The in-browser build
+cannot render the HTML report (no pandoc), so that button is replaced by a
+note; everything else works, including uploads.
+
 ## Input data
 
 `read_xyz()` parses the Geosoft-style ASCII interchange format most

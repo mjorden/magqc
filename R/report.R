@@ -88,11 +88,15 @@ qc_map <- function(result, decimate = 5) {
     d <- ln[seq(1, nrow(ln), by = decimate), ]
     if (nrow(ln) > 1 && !(nrow(ln) %in% seq(1, nrow(ln), by = decimate))) d <- rbind(d, ln[nrow(ln), ])
     tie <- ln$line_type[1] == "tie"
+    # Line names come straight from the XYZ file header. leaflet >= 2.0
+    # HTML-escapes `label` itself (escaping here again would double-escape);
+    # popups are not escaped by leaflet, which is why .popup() escapes (#1).
+    # layerId lets the viewer link a click on a line to its profile.
     m <- leaflet::addPolylines(
       m, lng = d$lon, lat = d$lat, weight = 1.6, opacity = 0.85,
       color = if (tie) .pal$tie else .pal$traverse,
       group = if (tie) "Tie lines" else "Traverse lines",
-      label = ln$line[1])
+      label = ln$line[1], layerId = ln$line[1])
   }
   for (k in seq_len(nrow(reg))) {
     f <- flags[flags$check == reg$check[k], ]
@@ -302,6 +306,118 @@ plot_crossovers <- function(result) {
       xanchor = "right", yanchor = "bottom", font = list(color = .pal$ink2, size = 12),
       text = sprintf("RMS %.2f nT (limit %g)", rms, sp$max_crossover_rms))))
 }
+
+# ---- per-line profile ------------------------------------------------------------
+
+#' Profile of one flight line
+#'
+#' Three stacked panels against distance along the line: the
+#' diurnal-corrected field, its despiked fourth difference with the
+#' acceptance limit, and the radar altimeter with its tolerance band. Every
+#' interval flagged on the line is shaded across all three panels and
+#' labelled with the check that raised it. This is the drill-down view the
+#' interactive viewer opens when a line is clicked on the map.
+#'
+#' @param result A `magqc_result` from [run_qc()].
+#' @param line Name of the line to draw.
+#' @return A plotly widget.
+#' @export
+plot_line_profile <- function(result, line) {
+  s <- result$survey
+  idx <- which(s$line == line)
+  if (!length(idx)) stop("Line '", line, "' is not in the survey.", call. = FALSE)
+  d <- s[idx, ]
+  sp <- result$spec
+  along <- cumsum(c(0, sqrt(diff(d$x)^2 + diff(d$y)^2)))
+  d4 <- result$fourth_difference[idx]
+  reg <- .check_registry()
+  f <- result$flags[!is.na(result$flags$line) & result$flags$line == line &
+                      !is.na(result$flags$i_start), ]
+  hover <- sprintf("fid %s, %s", d$fid, format(d$time, "%H:%M:%S"))
+
+  p1 <- plotly::plot_ly(x = along, y = d$mag, type = "scattergl", mode = "lines",
+                        line = list(color = .pal$traverse, width = 1.2), text = hover,
+                        hovertemplate = "%{y:.2f} nT<br>%{text}<extra></extra>", name = "field")
+  p2 <- plotly::plot_ly(x = along, y = d4, type = "scattergl", mode = "lines",
+                        line = list(color = .pal$traverse, width = 1), text = hover,
+                        hovertemplate = "%{y:.4f} nT<br>%{text}<extra></extra>", name = "4th diff")
+  for (lim in c(-1, 1) * sp$fourth_diff_tol) {
+    p2 <- plotly::add_trace(p2, x = range(along), y = c(lim, lim), type = "scatter", mode = "lines",
+                            line = list(color = .pal$muted, dash = "dot", width = 1),
+                            hoverinfo = "skip", name = "limit", inherit = FALSE)
+  }
+  p3 <- plotly::plot_ly(x = along, y = d$radar_alt, type = "scattergl", mode = "lines",
+                        line = list(color = .pal$traverse, width = 1.2), text = hover,
+                        hovertemplate = "%{y:.1f} m<br>%{text}<extra></extra>", name = "clearance")
+  for (lim in sp$nominal_clearance + c(-1, 1) * sp$clearance_tol) {
+    p3 <- plotly::add_trace(p3, x = range(along), y = c(lim, lim), type = "scatter", mode = "lines",
+                            line = list(color = .pal$muted, dash = "dot", width = 1),
+                            hoverinfo = "skip", name = "band", inherit = FALSE)
+  }
+
+  min_w <- diff(range(along)) * 0.004
+  shapes <- lapply(seq_len(nrow(f)), function(r) {
+    x0 <- along[f$i_start[r] - idx[1] + 1]; x1 <- along[f$i_end[r] - idx[1] + 1]
+    if (x1 - x0 < min_w) { x0 <- x0 - min_w / 2; x1 <- x1 + min_w / 2 }
+    list(type = "rect", xref = "x", yref = "paper", x0 = x0, x1 = x1, y0 = 0, y1 = 1,
+         fillcolor = .pal$flag_fill, line = list(width = 0), layer = "below")
+  })
+  ann <- if (nrow(f) && nrow(f) <= 15) lapply(seq_len(nrow(f)), function(r) list(
+    xref = "x", yref = "paper", y = 1.0, yanchor = "bottom", showarrow = FALSE,
+    x = (along[f$i_start[r] - idx[1] + 1] + along[f$i_end[r] - idx[1] + 1]) / 2,
+    text = reg$label[match(f$check[r], reg$check)],
+    font = list(size = 10, color = .pal$critical))) else list()
+
+  ax <- function(title) list(title = title, gridcolor = .pal$grid, zeroline = FALSE,
+                             linecolor = .pal$axis, tickfont = list(color = .pal$muted))
+  p <- plotly::subplot(p1, p2, p3, nrows = 3, shareX = TRUE, titleY = TRUE,
+                       heights = c(0.42, 0.29, 0.29))
+  plotly::layout(
+    p, showlegend = FALSE, shapes = shapes, annotations = ann,
+    font = list(family = .font, color = .pal$ink2, size = 12),
+    paper_bgcolor = .pal$surface, plot_bgcolor = .pal$surface,
+    margin = list(l = 60, r = 20, t = 30, b = 45), hovermode = "x unified",
+    xaxis = ax("distance along line (m)"),
+    yaxis = ax("field (nT)"), yaxis2 = ax("4th diff (nT)"), yaxis3 = ax("clearance (m)"))
+}
+
+#' Flag table for display
+#'
+#' The flag tibble from [run_qc()] reshaped for a reader: check labels
+#' instead of slugs, times and fiducial ranges as strings, and rounded
+#' values. Used by the report and the viewer.
+#'
+#' @param result A `magqc_result` from [run_qc()].
+#' @return A data frame with columns `check`, `line`, `start`, `end`, `fid`,
+#'   `value`, `limit`, `units`, `finding`.
+#' @export
+flag_table <- function(result) {
+  f <- result$flags
+  lab <- .check_registry()
+  if (!nrow(f)) {
+    return(data.frame(check = character(), line = character(), start = character(),
+                      end = character(), fid = character(), value = numeric(),
+                      limit = numeric(), units = character(), finding = character(),
+                      stringsAsFactors = FALSE))
+  }
+  data.frame(
+    check = lab$label[match(f$check, lab$check)],
+    line = ifelse(is.na(f$line), "survey-wide", f$line),
+    start = ifelse(is.na(f$time_start), "", format(f$time_start, "%H:%M:%S")),
+    end = ifelse(is.na(f$time_end), "", format(f$time_end, "%H:%M:%S")),
+    fid = ifelse(is.na(f$fid_start), "",
+                 ifelse(f$fid_end == f$fid_start, as.character(f$fid_start),
+                        paste0(f$fid_start, "-", f$fid_end))),
+    value = signif(f$value, 3), limit = signif(f$threshold, 3), units = f$units,
+    finding = f$description, stringsAsFactors = FALSE)
+}
+
+#' Registry of QC checks
+#'
+#' @return A tibble with the check slug and its display label, in report
+#'   order.
+#' @export
+check_registry <- function() .check_registry()
 
 # ---- report ------------------------------------------------------------------------
 

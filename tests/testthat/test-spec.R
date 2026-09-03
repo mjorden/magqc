@@ -1,0 +1,12 @@
+test_that("survey_spec derives sample spacing and validates inputs", {
+  s <- survey_spec()
+  expect_s3_class(s, "magqc_spec")
+  expect_equal(s$max_along_line_sep, 1.5 * 60 / 10)
+  expect_equal(survey_spec(ground_speed = 70, sample_rate = 20)$max_along_line_sep, 5.25)
+  expect_equal(survey_spec(max_along_line_sep = 4)$max_along_line_sep, 4)
+  expect_error(survey_spec(line_spacing = -1), "line_spacing")
+  expect_error(survey_spec(spike_window = 20), "odd")
+  expect_error(survey_spec(max_gap = "a"), "max_gap")
+  expect_equal(survey_spec(line_azimuth = 370)$line_azimuth, 10)
+  expect_output(print(s), "traverse spacing")
+})

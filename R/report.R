@@ -1,0 +1,350 @@
+# Report palette. Categorical slots are assigned by entity and never cycled:
+# traverse lines are always slot 1, tie lines always slot 2. Status colours
+# are reserved for pass/fail and never reused for a series; wherever one
+# appears it is paired with a text label so colour never carries the meaning
+# alone.
+.pal <- list(
+  traverse  = "#2a78d6", tie = "#eb6834",
+  good      = "#0ca30c", critical = "#d03b3b",
+  ink       = "#0b0b0b", ink2 = "#52514e", muted = "#898781",
+  grid      = "#e1e0d9", axis = "#c3c2b7", surface = "#fcfcfb",
+  band      = "rgba(137,135,129,0.12)", flag_fill = "rgba(208,59,59,0.16)")
+
+.font <- 'system-ui, -apple-system, "Segoe UI", sans-serif'
+
+.plotly_base <- function(p, ytitle, xtitle = "time (UTC)") {
+  plotly::layout(
+    p,
+    font = list(family = .font, color = .pal$ink2, size = 12),
+    paper_bgcolor = .pal$surface, plot_bgcolor = .pal$surface,
+    margin = list(l = 60, r = 20, t = 10, b = 45),
+    hovermode = "x unified",
+    xaxis = list(title = xtitle, gridcolor = .pal$grid, zeroline = FALSE,
+                 linecolor = .pal$axis, tickfont = list(color = .pal$muted)),
+    yaxis = list(title = ytitle, gridcolor = .pal$grid, zeroline = FALSE,
+                 linecolor = .pal$axis, tickfont = list(color = .pal$muted)),
+    legend = list(orientation = "h", x = 0, y = 1.08, font = list(color = .pal$ink2)))
+}
+
+#' Insert a row of NAs between lines so plotly does not join them across turns
+#' @noRd
+.gap_between_lines <- function(df) {
+  parts <- split(df, factor(df$line, levels = unique(df$line)))
+  out <- lapply(parts, function(p) {
+    g <- p[1, ]; g[] <- NA; g$line <- p$line[1]
+    rbind(p, g)
+  })
+  do.call(rbind, out)
+}
+
+.flag_mask <- function(result, check) {
+  f <- result$flags[result$flags$check == check & !is.na(result$flags$i_start), ]
+  m <- logical(nrow(result$survey))
+  for (r in seq_len(nrow(f))) m[f$i_start[r]:f$i_end[r]] <- TRUE
+  m
+}
+
+# ---- map -------------------------------------------------------------------
+
+#' Map of flight lines and flagged intervals
+#'
+#' A leaflet map when the survey has longitude/latitude, otherwise a plotly
+#' scatter in local metres. Traverse and tie lines are drawn in their own
+#' colours; each check with findings gets a toggleable layer of red intervals
+#' (or markers for single-sample and survey-level findings) with a popup
+#' describing the finding.
+#'
+#' @param result A `magqc_result` from [run_qc()].
+#' @param decimate Draw every n-th sample of each line; the full resolution is
+#'   kept for flagged intervals.
+#' @return An htmlwidget.
+#' @export
+qc_map <- function(result, decimate = 5) {
+  s <- result$survey
+  flags <- result$flags
+  reg <- .check_registry()
+  if (isTRUE(result$stats$has_lonlat)) .leaflet_map(s, flags, reg, decimate) else
+    .plotly_map(s, flags, reg, decimate)
+}
+
+.popup <- function(f) {
+  sprintf("<b>%s</b><br/>%s<br/><span style='color:%s'>%s%s%s</span>",
+          htmltools::htmlEscape(ifelse(is.na(f$line), "survey-wide", f$line)),
+          htmltools::htmlEscape(f$description), .pal$ink2,
+          ifelse(is.na(f$time_start), "", format(f$time_start, "%H:%M:%S")),
+          ifelse(is.na(f$time_end) | f$time_end == f$time_start, "",
+                 paste0(" to ", format(f$time_end, "%H:%M:%S"))),
+          ifelse(is.na(f$fid_start), "", sprintf("&nbsp;&nbsp;fid %s%s", f$fid_start,
+                 ifelse(f$fid_end == f$fid_start, "", paste0("-", f$fid_end)))))
+}
+
+.leaflet_map <- function(s, flags, reg, decimate) {
+  m <- leaflet::leaflet(options = leaflet::leafletOptions(preferCanvas = TRUE))
+  # OpenStreetMap needs no key; Carto's light basemap now watermarks without one.
+  m <- leaflet::addProviderTiles(m, "OpenStreetMap.Mapnik", group = "OpenStreetMap")
+  m <- leaflet::addProviderTiles(m, "Esri.WorldImagery", group = "Esri imagery")
+  groups <- c("Traverse lines", "Tie lines")
+  for (ln in split(s, s$line)) {
+    d <- ln[seq(1, nrow(ln), by = decimate), ]
+    if (nrow(ln) > 1 && !(nrow(ln) %in% seq(1, nrow(ln), by = decimate))) d <- rbind(d, ln[nrow(ln), ])
+    tie <- ln$line_type[1] == "tie"
+    m <- leaflet::addPolylines(
+      m, lng = d$lon, lat = d$lat, weight = 1.6, opacity = 0.85,
+      color = if (tie) .pal$tie else .pal$traverse,
+      group = if (tie) "Tie lines" else "Traverse lines",
+      label = ln$line[1])
+  }
+  for (k in seq_len(nrow(reg))) {
+    f <- flags[flags$check == reg$check[k], ]
+    if (!nrow(f)) next
+    grp <- sprintf("%s (%d)", reg$label[k], nrow(f))
+    groups <- c(groups, grp)
+    for (r in seq_len(nrow(f))) {
+      pop <- .popup(f[r, ])
+      if (!is.na(f$i_start[r]) && f$i_end[r] > f$i_start[r]) {
+        seg <- s[f$i_start[r]:f$i_end[r], ]
+        m <- leaflet::addPolylines(m, lng = seg$lon, lat = seg$lat, weight = 6,
+                                   opacity = 0.9, color = .pal$critical,
+                                   group = grp, popup = pop)
+      } else if (is.finite(f$lon[r])) {
+        m <- leaflet::addCircleMarkers(
+          m, lng = f$lon[r], lat = f$lat[r],
+          radius = if (is.na(f$i_start[r])) 10 else 6,
+          stroke = TRUE, color = .pal$surface, weight = 2,
+          fillColor = .pal$critical, fillOpacity = 0.9, group = grp, popup = pop)
+      }
+    }
+  }
+  m <- leaflet::addLayersControl(m, baseGroups = c("OpenStreetMap", "Esri imagery"),
+                                 overlayGroups = groups,
+                                 options = leaflet::layersControlOptions(collapsed = FALSE))
+  m <- leaflet::addLegend(m, position = "bottomleft",
+                          colors = c(.pal$traverse, .pal$tie, .pal$critical),
+                          labels = c("traverse line", "tie line", "flagged interval"),
+                          opacity = 0.9)
+  m <- leaflet::addScaleBar(m, position = "bottomright")
+  ok <- is.finite(s$lon) & is.finite(s$lat)
+  pad_lon <- diff(range(s$lon[ok])) * 0.08; pad_lat <- diff(range(s$lat[ok])) * 0.08
+  leaflet::fitBounds(m, min(s$lon[ok]) - pad_lon, min(s$lat[ok]) - pad_lat,
+                     max(s$lon[ok]) + pad_lon, max(s$lat[ok]) + pad_lat)
+}
+
+.plotly_map <- function(s, flags, reg, decimate) {
+  d <- s[seq(1, nrow(s), by = decimate), ]
+  d <- .gap_between_lines(d)
+  p <- plotly::plot_ly()
+  for (typ in c("traverse", "tie")) {
+    dd <- d[d$line_type == typ | is.na(d$line_type), ]
+    p <- plotly::add_trace(p, data = dd, x = ~x, y = ~y, type = "scattergl", mode = "lines",
+                           line = list(color = if (typ == "tie") .pal$tie else .pal$traverse, width = 1.5),
+                           text = ~line, hoverinfo = "text", name = paste(typ, "lines"))
+  }
+  for (k in seq_len(nrow(reg))) {
+    f <- flags[flags$check == reg$check[k], ]
+    if (!nrow(f)) next
+    idx <- unlist(lapply(which(!is.na(f$i_start)), function(r) c(f$i_start[r]:f$i_end[r], NA)))
+    if (length(idx)) {
+      seg <- s[idx, ]
+      p <- plotly::add_trace(p, data = seg, x = ~x, y = ~y, type = "scattergl", mode = "lines+markers",
+                             line = list(color = .pal$critical, width = 5),
+                             marker = list(color = .pal$critical, size = 6),
+                             hoverinfo = "text", text = rep(f$description[!is.na(f$i_start)][1], nrow(seg)),
+                             name = sprintf("%s (%d)", reg$label[k], nrow(f)))
+    }
+    ff <- f[is.na(f$i_start) & is.finite(f$x), ]
+    if (nrow(ff)) {
+      p <- plotly::add_trace(p, data = ff, x = ~x, y = ~y, type = "scattergl", mode = "markers",
+                             marker = list(color = .pal$critical, size = 14,
+                                           line = list(color = .pal$surface, width = 2)),
+                             text = ~description, hoverinfo = "text",
+                             name = sprintf("%s (%d)", reg$label[k], nrow(f)))
+    }
+  }
+  p <- .plotly_base(p, "northing (m)", "easting (m)")
+  plotly::layout(p, hovermode = "closest", yaxis = list(scaleanchor = "x", scaleratio = 1))
+}
+
+# ---- diagnostics ---------------------------------------------------------------
+
+#' Diagnostic plots
+#'
+#' Each returns a plotly widget for one section of the report.
+#' `plot_fourth_difference()` shows the despiked fourth-difference series
+#' against its limit; `plot_clearance()` the radar altimeter against the
+#' nominal band; `plot_diurnal()` the base-station record with exceedance
+#' windows shaded; `plot_crossovers()` the misfit at every traverse/tie
+#' intersection, by flight direction.
+#'
+#' @param result A `magqc_result` from [run_qc()].
+#' @name diagnostics
+NULL
+
+#' @rdname diagnostics
+#' @export
+plot_fourth_difference <- function(result) {
+  s <- result$survey
+  tol <- result$spec$fourth_diff_tol
+  d <- data.frame(line = s$line, time = s$time, d4 = result$fourth_difference)
+  bad <- d[.flag_mask(result, "fourth_difference"), ]
+  d <- .gap_between_lines(d)
+  p <- plotly::plot_ly()
+  p <- plotly::add_trace(p, data = d, x = ~time, y = ~d4, type = "scattergl", mode = "lines",
+                         line = list(color = .pal$traverse, width = 1), name = "fourth difference",
+                         text = ~line, hovertemplate = "%{text}: %{y:.4f} nT<extra></extra>")
+  if (nrow(bad)) {
+    p <- plotly::add_trace(p, data = bad, x = ~time, y = ~d4, type = "scattergl", mode = "markers",
+                           marker = list(color = .pal$critical, size = 5), name = "exceeds limit",
+                           text = ~line, hovertemplate = "%{text}: %{y:.4f} nT<extra></extra>")
+  }
+  p <- .plotly_base(p, "fourth difference (nT)")
+  plotly::layout(p, shapes = list(
+    list(type = "line", xref = "paper", x0 = 0, x1 = 1, y0 = tol, y1 = tol,
+         line = list(color = .pal$muted, dash = "dot", width = 1)),
+    list(type = "line", xref = "paper", x0 = 0, x1 = 1, y0 = -tol, y1 = -tol,
+         line = list(color = .pal$muted, dash = "dot", width = 1))),
+    annotations = list(list(xref = "paper", x = 1, y = tol, text = sprintf("limit %g nT", tol),
+                            showarrow = FALSE, xanchor = "right", yanchor = "bottom",
+                            font = list(color = .pal$muted, size = 11))))
+}
+
+#' @rdname diagnostics
+#' @export
+plot_clearance <- function(result) {
+  s <- result$survey; sp <- result$spec
+  d <- data.frame(line = s$line, time = s$time, alt = s$radar_alt)
+  bad <- d[.flag_mask(result, "clearance"), ]
+  d <- .gap_between_lines(d)
+  p <- plotly::plot_ly()
+  p <- plotly::add_trace(p, data = d, x = ~time, y = ~alt, type = "scattergl", mode = "lines",
+                         line = list(color = .pal$traverse, width = 1), name = "radar altimeter",
+                         text = ~line, hovertemplate = "%{text}: %{y:.1f} m<extra></extra>")
+  if (nrow(bad)) {
+    p <- plotly::add_trace(p, data = bad, x = ~time, y = ~alt, type = "scattergl", mode = "markers",
+                           marker = list(color = .pal$critical, size = 5), name = "outside tolerance",
+                           text = ~line, hovertemplate = "%{text}: %{y:.1f} m<extra></extra>")
+  }
+  p <- .plotly_base(p, "terrain clearance (m)")
+  plotly::layout(p, shapes = list(
+    list(type = "rect", xref = "paper", x0 = 0, x1 = 1,
+         y0 = sp$nominal_clearance - sp$clearance_tol, y1 = sp$nominal_clearance + sp$clearance_tol,
+         fillcolor = .pal$band, line = list(width = 0), layer = "below")),
+    annotations = list(list(xref = "paper", x = 1, y = sp$nominal_clearance + sp$clearance_tol,
+                            text = sprintf("%g \u00b1 %g m", sp$nominal_clearance, sp$clearance_tol),
+                            showarrow = FALSE, xanchor = "right", yanchor = "bottom",
+                            font = list(color = .pal$muted, size = 11))))
+}
+
+#' @rdname diagnostics
+#' @export
+plot_diurnal <- function(result) {
+  d <- result$diurnal
+  if (is.null(d)) return(NULL)
+  p <- plotly::plot_ly(d, x = ~time)
+  p <- plotly::add_trace(p, y = ~mag_base, type = "scattergl", mode = "lines",
+                         line = list(color = .pal$traverse, width = 1.5), name = "base station",
+                         customdata = ~chord_dev,
+                         hovertemplate = "%{y:.1f} nT  (chord departure %{customdata:.2f} nT)<extra></extra>")
+  win <- .runs(d$exceed)
+  shapes <- lapply(seq_len(nrow(win)), function(r) list(
+    type = "rect", xref = "x", yref = "paper",
+    x0 = d$time[win$start[r]], x1 = d$time[win$end[r]], y0 = 0, y1 = 1,
+    fillcolor = .pal$flag_fill, line = list(width = 0), layer = "below"))
+  ann <- if (nrow(win)) list(list(
+    xref = "x", yref = "paper", x = d$time[win$start[1]], y = 1,
+    text = sprintf("exceeds %g nT / %g s", result$spec$max_diurnal_dev, result$spec$diurnal_window),
+    showarrow = FALSE, xanchor = "left", yanchor = "top",
+    font = list(color = .pal$critical, size = 11))) else list()
+  p <- .plotly_base(p, "base-station field (nT)")
+  plotly::layout(p, shapes = shapes, annotations = ann)
+}
+
+#' @rdname diagnostics
+#' @export
+plot_crossovers <- function(result) {
+  xo <- result$crossovers
+  if (!nrow(xo)) return(NULL)
+  sp <- result$spec
+  hd <- result$heading
+  s <- result$survey
+  tr <- s[s$line_type == "traverse", ]
+  hdg <- dplyr::summarise(dplyr::group_by(tr, .data$line),
+                          bearing = .bearing(dplyr::last(.data$x) - dplyr::first(.data$x),
+                                             dplyr::last(.data$y) - dplyr::first(.data$y)),
+                          .groups = "drop")
+  xo$heading <- paste0(.compass(hdg$bearing[match(xo$traverse, hdg$line)]), "-bound")
+  xo <- xo[order(xo$traverse, xo$tie), ]
+  xo$id <- seq_len(nrow(xo))
+  xo$label <- paste(xo$traverse, "x", xo$tie)
+  hs <- sort(unique(xo$heading))
+  cols <- stats::setNames(c(.pal$traverse, .pal$tie, .pal$muted)[seq_along(hs)], hs)
+  p <- plotly::plot_ly()
+  for (h in hs) {
+    dd <- xo[xo$heading == h, ]
+    p <- plotly::add_trace(p, data = dd, x = ~id, y = ~misfit, type = "scatter", mode = "markers",
+                           marker = list(color = cols[[h]], size = 9,
+                                         line = list(color = .pal$surface, width = 1.5)),
+                           name = h, text = ~label,
+                           hovertemplate = "%{text}: %{y:+.2f} nT<extra></extra>")
+  }
+  rms <- sqrt(mean(xo$misfit^2))
+  p <- .plotly_base(p, "traverse - tie misfit (nT)", "crossover (ordered by traverse, tie)")
+  plotly::layout(
+    p, hovermode = "closest",
+    shapes = list(
+      list(type = "line", xref = "paper", x0 = 0, x1 = 1, y0 = 0, y1 = 0,
+           line = list(color = .pal$axis, width = 1)),
+      list(type = "line", xref = "paper", x0 = 0, x1 = 1, y0 = sp$max_crossover_abs,
+           y1 = sp$max_crossover_abs, line = list(color = .pal$muted, dash = "dot", width = 1)),
+      list(type = "line", xref = "paper", x0 = 0, x1 = 1, y0 = -sp$max_crossover_abs,
+           y1 = -sp$max_crossover_abs, line = list(color = .pal$muted, dash = "dot", width = 1))),
+    annotations = list(list(
+      xref = "paper", yref = "paper", x = 1, y = 1.02, showarrow = FALSE,
+      xanchor = "right", yanchor = "bottom", font = list(color = .pal$ink2, size = 12),
+      text = sprintf("RMS %.2f nT (limit %g)", rms, sp$max_crossover_rms))))
+}
+
+# ---- report ------------------------------------------------------------------------
+
+#' Render the HTML acceptance report
+#'
+#' Renders the bundled R Markdown template to a single self-contained HTML
+#' file containing the summary statistics, the pass/fail scorecard, the map
+#' of flight lines with every flagged interval, the flag table, diagnostic
+#' plots and the specification the survey was tested against.
+#'
+#' @param result A `magqc_result` from [run_qc()].
+#' @param output Path of the HTML file to write.
+#' @param title Report title.
+#' @param open Open the report in the browser afterwards?
+#' @return The path to the rendered file, invisibly.
+#' @examples
+#' \dontrun{
+#' res <- run_qc(sim_survey())
+#' qc_report(res, "magqc-report.html")
+#' }
+#' @export
+qc_report <- function(result, output = "magqc-report.html",
+                      title = "Airborne magnetic survey QA/QC", open = FALSE) {
+  stopifnot(inherits(result, "magqc_result"))
+  tmpl <- system.file("rmarkdown", "qc_report.Rmd", package = "magqc")
+  if (!nzchar(tmpl)) stop("Report template not found; is magqc installed?", call. = FALSE)
+  output <- normalizePath(output, mustWork = FALSE)
+  # render in a scratch copy so intermediate files never land beside the user's data
+  work <- tempfile("magqc-report-")
+  dir.create(work)
+  file.copy(tmpl, file.path(work, "qc_report.Rmd"))
+  rmarkdown::render(
+    file.path(work, "qc_report.Rmd"),
+    output_file = output, output_dir = dirname(output),
+    params = list(result = result, title = title),
+    envir = new.env(parent = globalenv()), quiet = TRUE)
+  if (isTRUE(open)) utils::browseURL(output)
+  invisible(output)
+}
+
+#' @importFrom rlang .data
+NULL
+
+# DT and knitr are called from the R Markdown template, not from package code;
+# referencing them here keeps R CMD check from reporting them as unused.
+.template_deps <- function() list(DT::datatable, knitr::knit)

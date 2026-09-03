@@ -1,0 +1,214 @@
+---
+title: "`r params$title`"
+output:
+  html_document:
+    self_contained: true
+    theme: null
+    highlight: null
+    mathjax: null
+    toc: false
+params:
+  result: null
+  title: "Airborne magnetic survey QA/QC"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, out.width = "100%")
+res <- params$result
+st <- res$stats
+sc <- res$scorecard
+sp <- res$spec
+pal <- magqc:::.pal
+fmt_t <- function(x) format(x, "%Y-%m-%d %H:%M UTC")
+status_cell <- function(s) {
+  switch(s,
+    pass = sprintf('<span class="st pass">&#10003; pass</span>'),
+    fail = sprintf('<span class="st fail">&#10007; fail</span>'),
+    sprintf('<span class="st na">&ndash; n/a</span>'))
+}
+num <- function(x, d = 2) ifelse(is.na(x), "n/a", formatC(x, format = "f", digits = d, big.mark = ","))
+```
+
+<style>
+body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #0b0b0b;
+       background: #f9f9f7; margin: 0; padding: 0 0 4rem 0; line-height: 1.45; }
+.main-container, .container-fluid { max-width: 1180px; margin: 0 auto; padding: 1.5rem 1.25rem; }
+h1.title { font-size: 1.7rem; font-weight: 600; margin: 0 0 .25rem 0; }
+h2 { font-size: 1.15rem; font-weight: 600; margin: 2.2rem 0 .6rem 0; color: #0b0b0b;
+     border-bottom: 1px solid #e1e0d9; padding-bottom: .3rem; }
+h3 { font-size: 1rem; font-weight: 600; margin: 1.4rem 0 .4rem 0; }
+p.sub { color: #52514e; margin: 0 0 1.25rem 0; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .75rem; margin: 1rem 0; }
+.tile { background: #fcfcfb; border: 1px solid rgba(11,11,11,.10); border-radius: 6px; padding: .8rem .9rem; }
+.tile .v { font-size: 1.55rem; font-weight: 600; letter-spacing: -.01em; }
+.tile .l { font-size: .78rem; color: #52514e; margin-top: .1rem; }
+.tile.verdict .v { font-size: 1.3rem; }
+.tile.verdict.pass .v { color: #006300; }
+.tile.verdict.fail .v { color: #d03b3b; }
+table.sc { width: 100%; border-collapse: collapse; background: #fcfcfb; font-size: .92rem;
+           border: 1px solid rgba(11,11,11,.10); border-radius: 6px; }
+table.sc th { text-align: left; font-weight: 600; color: #52514e; font-size: .8rem;
+              text-transform: uppercase; letter-spacing: .03em; padding: .55rem .7rem;
+              border-bottom: 1px solid #e1e0d9; }
+table.sc td { padding: .5rem .7rem; border-bottom: 1px solid #e1e0d9; vertical-align: top; }
+table.sc td.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.sc tr:last-child td { border-bottom: none; }
+.st { font-weight: 600; white-space: nowrap; }
+.st.pass { color: #006300; } .st.fail { color: #d03b3b; } .st.na { color: #898781; }
+.note { color: #898781; font-size: .8rem; }
+.leaflet-container { border: 1px solid rgba(11,11,11,.10); border-radius: 6px; }
+.methods p, .methods li { font-size: .9rem; color: #52514e; }
+.methods b { color: #0b0b0b; }
+table.dataTable { font-size: .86rem; }
+.meta { font-size: .8rem; color: #898781; margin-top: 3rem; border-top: 1px solid #e1e0d9; padding-top: .6rem; }
+</style>
+
+<p class="sub">`r sprintf("%s to %s &middot; %d lines &middot; %s samples", fmt_t(st$start), fmt_t(st$end), st$n_lines, format(st$n_samples, big.mark = ","))`</p>
+
+```{r tiles, results="asis"}
+verdict <- if (st$checks_failed == 0) "pass" else "fail"
+cat('<div class="tiles">')
+cat(sprintf('<div class="tile verdict %s"><div class="v">%s</div><div class="l">%d of %d checks passed</div></div>',
+            verdict, if (verdict == "pass") "&#10003; Accepted" else "&#10007; Not accepted",
+            st$checks_passed, st$checks_total))
+cat(sprintf('<div class="tile"><div class="v">%s</div><div class="l">line-km flown</div></div>', num(st$line_km, 1)))
+cat(sprintf('<div class="tile"><div class="v">%s</div><div class="l">line-km flagged</div></div>', num(st$flagged_km, 2)))
+cat(sprintf('<div class="tile"><div class="v">%s%%</div><div class="l">line-km accepted</div></div>', num(st$accepted_pct, 1)))
+cat(sprintf('<div class="tile"><div class="v">%d</div><div class="l">flagged intervals</div></div>', st$n_flags))
+cat(sprintf('<div class="tile"><div class="v">%s h</div><div class="l">flight duration</div></div>', num(st$duration_h, 1)))
+cat(sprintf('<div class="tile"><div class="v">%d</div><div class="l">tie-line crossovers</div></div>', st$n_crossovers))
+cat('</div>')
+```
+
+## Scorecard
+
+```{r scorecard, results="asis"}
+cat('<table class="sc"><thead><tr><th>Check</th><th>Status</th><th>Statistic</th><th class="num">Value</th><th class="num">Limit</th><th class="num">Flags</th><th class="num">Samples affected</th></tr></thead><tbody>')
+for (k in seq_len(nrow(sc))) {
+  note <- if (!is.na(sc$note[k])) sprintf('<br/><span class="note">%s</span>', sc$note[k]) else ""
+  cat(sprintf('<tr><td>%s%s</td><td>%s</td><td>%s</td><td class="num">%s</td><td class="num">%s</td><td class="num">%d</td><td class="num">%s</td></tr>',
+              sc$label[k], note, status_cell(sc$status[k]), sc$metric_label[k],
+              if (is.na(sc$metric[k])) "n/a" else format(signif(sc$metric[k], 3)),
+              format(signif(sc$threshold[k], 3)), sc$n_flags[k],
+              if (sc$n_samples[k] > 0) sprintf("%s (%.1f%%)", format(sc$n_samples[k], big.mark = ","), sc$pct_samples[k]) else "&ndash;"))
+}
+cat('</tbody></table>')
+```
+
+## Flight lines and flagged intervals
+
+Toggle each check's layer in the control at the top right; click any flagged interval or marker for details.
+
+```{r map}
+magqc::qc_map(res)
+```
+
+## Flagged intervals
+
+```{r flags}
+f <- res$flags
+if (nrow(f)) {
+  lab <- magqc:::.check_registry()
+  tbl <- data.frame(
+    check = lab$label[match(f$check, lab$check)],
+    line = ifelse(is.na(f$line), "survey-wide", f$line),
+    start = ifelse(is.na(f$time_start), "", format(f$time_start, "%H:%M:%S")),
+    end = ifelse(is.na(f$time_end), "", format(f$time_end, "%H:%M:%S")),
+    fid = ifelse(is.na(f$fid_start), "", ifelse(f$fid_end == f$fid_start, as.character(f$fid_start),
+                                                 paste0(f$fid_start, "–", f$fid_end))),
+    value = signif(f$value, 3), limit = signif(f$threshold, 3), units = f$units,
+    finding = f$description, stringsAsFactors = FALSE)
+  DT::datatable(tbl, rownames = FALSE, filter = "top", class = "compact stripe",
+                options = list(pageLength = 15, order = list(list(0, "asc"), list(2, "asc")),
+                               dom = "tip", autoWidth = FALSE))
+} else {
+  htmltools::tags$p("No intervals were flagged.")
+}
+```
+
+## Diagnostics
+
+### Fourth-difference noise
+
+Computed on the despiked, diurnal-corrected field; dotted lines are the acceptance limit.
+
+```{r d4}
+magqc::plot_fourth_difference(res)
+```
+
+```{r clearance-hdr, results="asis"}
+if (!all(is.na(res$survey$radar_alt))) cat("### Terrain clearance\n\nShaded band is the accepted range.\n")
+```
+
+```{r clearance}
+if (!all(is.na(res$survey$radar_alt))) magqc::plot_clearance(res)
+```
+
+```{r diurnal-hdr, results="asis"}
+if (!is.null(res$diurnal)) cat("### Base station\n\nShaded windows exceed the chord-departure limit; samples flown inside them are flagged above.\n")
+```
+
+```{r diurnal}
+if (!is.null(res$diurnal)) magqc::plot_diurnal(res)
+```
+
+```{r xo-hdr, results="asis"}
+if (nrow(res$crossovers)) cat("### Crossover misfit\n\nTraverse minus tie at each intersection, before levelling. A systematic split between flight directions is heading error.\n")
+```
+
+```{r crossovers}
+if (nrow(res$crossovers)) magqc::plot_crossovers(res)
+```
+
+## Lines
+
+```{r lines}
+ln <- res$lines
+DT::datatable(
+  data.frame(line = ln$line, type = ln$line_type, samples = ln$n_samples,
+             start = format(ln$start, "%H:%M:%S"), end = format(ln$end, "%H:%M:%S"),
+             km = round(ln$length_km, 2), flagged_km = round(ln$flagged_km, 3),
+             flags = ln$n_flags, status = ln$status),
+  rownames = FALSE, class = "compact stripe",
+  options = list(pageLength = 25, dom = "tip", autoWidth = FALSE))
+```
+
+## Specification
+
+```{r spec, results="asis"}
+rows <- list(
+  c("Traverse spacing", sprintf("%g m ± %g%%", sp$line_spacing, sp$line_spacing_tol * 100)),
+  c("Tie spacing", sprintf("%g m", sp$tie_spacing)),
+  c("Traverse / tie azimuth", sprintf("%g° / %g°", sp$line_azimuth, sp$tie_azimuth)),
+  c("Sample rate, ground speed", sprintf("%g Hz, %g m/s", sp$sample_rate, sp$ground_speed)),
+  c("Max sample spacing", sprintf("%.2f m", sp$max_along_line_sep)),
+  c("Max departure from line", sprintf("%g m", sp$max_deviation)),
+  c("Terrain clearance", sprintf("%g ± %g m", sp$nominal_clearance, sp$clearance_tol)),
+  c("Fourth-difference limit", sprintf("%g nT (%s)", sp$fourth_diff_tol, if (sp$fourth_diff_normalize) "operator / 16" else "raw operator")),
+  c("Spike test", sprintf("%g σ over a %d-sample running median", sp$spike_nsigma, sp$spike_window)),
+  c("Diurnal limit", sprintf("%g nT departure from a %g s chord", sp$max_diurnal_dev, sp$diurnal_window)),
+  c("Crossover misfit", sprintf("RMS ≤ %g nT; any single crossover ≤ %g nT", sp$max_crossover_rms, sp$max_crossover_abs)),
+  c("Heading error", sprintf("≤ %g nT", sp$max_heading_error)),
+  c("Max data gap", sprintf("%g s", sp$max_gap)),
+  c("Diurnal correction", if (isTRUE(st$diurnal_corrected)) "applied from base-station record" else "not applied (no base-station record)"))
+cat('<table class="sc"><tbody>')
+for (r in rows) cat(sprintf('<tr><td>%s</td><td>%s</td></tr>', r[1], r[2]))
+cat('</tbody></table>')
+```
+
+<div class="methods">
+## Methods
+
+- **Data gaps** - any break between consecutive records on a line longer than the limit.
+- **Along-line sampling** - ground distance between consecutive samples, ignoring the two samples either side of a gap.
+- **Departure from line** - perpendicular distance from the planned line, or from a total-least-squares fit through the flown line when no plan is supplied (in which case a line flown parallel to but off its planned position is caught by the separation check instead).
+- **Line separation** - distance between the centroids of adjacent traverse lines projected perpendicular to the planned azimuth.
+- **Terrain clearance** - radar altimeter against the nominal clearance band.
+- **Spikes** - a sample is a spike when its fourth difference exceeds the stated number of running median absolute deviations of the fourth difference (scaled to sigma). The test is made on the fourth difference rather than the field because a running-median filter reads ordinary noise on a steep anomaly as outliers; the fourth difference removes the geology first. Spike amplitude is one sixth of the fourth difference.
+- **Fourth-difference noise** - `(x[i-2] - 4x[i-1] + 6x[i] - 4x[i+1] + x[i+2])`, optionally divided by 16, on the despiked field. This is the standard airborne noise-envelope statistic; it suppresses the geological signal and leaves the sensor noise.
+- **Diurnal variation** - the base-station record is compared with a straight chord over a sliding window of the stated length; the peak departure is the statistic. Survey samples acquired inside a window that exceeds the limit are flagged.
+- **Crossover misfit** - each traverse/tie intersection is located from the two lines' best-fit axes and the field is interpolated on each line at that point. RMS of traverse minus tie is the statistic.
+- **Heading error** - difference in mean crossover misfit between traverses flown in opposite directions.
+</div>
+
+<p class="meta">Generated `r format(Sys.time(), "%Y-%m-%d %H:%M %Z")` with magqc `r as.character(utils::packageVersion("magqc"))`.</p>

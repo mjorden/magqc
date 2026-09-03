@@ -1,0 +1,37 @@
+Package: magqc
+Title: QA/QC for Airborne Magnetic Survey Data
+Version: 0.1.0
+Authors@R:
+    person("Matthew", "Jorden", email = "matthew.jorden@gmail.com", role = c("aut", "cre"))
+Description: Acceptance testing for airborne magnetometer surveys. Reads
+    fiducial-level XYZ flight data, evaluates it against a configurable survey
+    specification (line spacing, departure from plan, terrain clearance,
+    fourth-difference noise, spikes, diurnal variation, tie-line crossover
+    misfit, heading error and data gaps), and renders a self-contained HTML
+    acceptance report with a map of the flight lines and every flagged
+    interval. Ships a synthetic survey generator so the whole workflow is
+    reproducible without proprietary data.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+Depends:
+    R (>= 4.1)
+Imports:
+    stats,
+    utils,
+    dplyr (>= 1.1.0),
+    tibble,
+    rlang,
+    leaflet,
+    plotly,
+    htmltools,
+    DT,
+    rmarkdown,
+    knitr
+Suggests:
+    testthat (>= 3.0.0),
+    withr
+Config/testthat/edition: 3
+URL: https://github.com/mjorden/magqc
+BugReports: https://github.com/mjorden/magqc/issues

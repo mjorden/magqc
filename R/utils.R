@@ -97,7 +97,11 @@ lonlat_to_enu <- function(lon, lat, lon0, lat0) {
 #' The scale is a running MAD of the fourth difference, dilated by a running
 #' maximum so the quiet side of a noisy stretch is judged against the noisy
 #' sigma too - otherwise the first samples of a noisy stretch read as spikes
-#' against the quiet scale next door.
+#' against the quiet scale next door. That dilation is also why the practical
+#' detection floor is higher than the naive `6A / (sqrt(70) sigma)` z-score
+#' suggests: with the defaults (`k = 21`, `nsigma = 6`) a spike of 25x the
+#' noise sd is always found, ~12x about 40% of the time, and 8x or less
+#' never (measured in tests/testthat/test-utils.R).
 #'
 #' @return A list: `outlier` (logical), `amplitude` and `z` (NA except at
 #'   outliers), `cleaned` (the series with each spike estimate subtracted).

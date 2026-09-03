@@ -25,18 +25,48 @@ test_that(".runs collapses logical vectors into intervals", {
   expect_equal(nrow(magqc:::.runs(c(FALSE, FALSE))), 0)
 })
 
-test_that("spike detector finds a spike on a steep smooth curve and nothing else", {
-  set.seed(1)
-  x <- 200 * sin(seq(0, 6, length.out = 400)) + rnorm(400, 0, 0.02)
-  x[200] <- x[200] + 5
-  h <- magqc:::.spike_detect(x, k = 21, nsigma = 6)
-  expect_equal(which(h$outlier), 200)
-  expect_equal(h$amplitude[200], 5, tolerance = 0.05)
-  expect_lt(abs(h$cleaned[200] - 200 * sin(6 * 199 / 399)), 0.1)
-  # a series with a missing value is filled before differencing, never flagged there
+# The spike detector's "nothing else is flagged" property is asserted over
+# many noise draws, not one seed, so a regression cannot hide behind (or be
+# faked by) a single lucky realisation (#14).
+steep_curve <- function(seed, spike = 0, sd = 0.02, at = 200) {
+  set.seed(seed)
+  x <- 200 * sin(seq(0, 6, length.out = 400)) + rnorm(400, 0, sd)
+  x[at] <- x[at] + spike
+  x
+}
+
+test_that("spike detector finds the spike and only the spike across 25 noise draws", {
+  hits <- lapply(1:25, function(s) magqc:::.spike_detect(steep_curve(s, spike = 5), k = 21, nsigma = 6))
+  found <- vapply(hits, function(h) identical(which(h$outlier), 200L), logical(1))
+  expect_true(all(found), info = paste("seeds missing or over-flagging:", paste(which(!found), collapse = " ")))
+  amps <- vapply(hits, function(h) h$amplitude[200], numeric(1))
+  expect_lt(max(abs(amps - 5)), 0.15)          # estimate noise is ~1.4 sigma = 0.03 nT
+  cleaned <- vapply(hits, function(h) h$cleaned[200], numeric(1))
+  expect_lt(max(abs(cleaned - 200 * sin(6 * 199 / 399))), 0.15)
+})
+
+test_that("spike detector has no false positives on 25 clean draws (10,000 samples)", {
+  fp <- vapply(1:25, function(s) sum(magqc:::.spike_detect(steep_curve(s), k = 21, nsigma = 6)$outlier), integer(1))
+  expect_equal(sum(fp), 0L)
+})
+
+test_that("spike detector sensitivity floor is where it was measured, not where naive sigma says", {
+  # Naively a spike A gives a 4th difference of 6A against sqrt(70)*sd of
+  # noise, so 0.25 nT at sd 0.02 would be ~9 sigma. In practice the running
+  # MAD is dilated by a running max (so noisy-segment edges are not read as
+  # spikes), which raises the floor: measured over 40 draws, 25x sd is always
+  # found, 12x sd about 40% of the time, and <= 8x sd never. Pin the two ends.
+  detected <- function(amp) vapply(1:20, function(s) 200L %in% which(magqc:::.spike_detect(steep_curve(s, spike = amp))$outlier), logical(1))
+  expect_true(all(detected(0.50)))     # 25x noise sd
+  expect_false(any(detected(0.15)))    #  8x noise sd
+})
+
+test_that("a missing value is filled before differencing and never flagged itself", {
+  x <- steep_curve(1, spike = 5)
   x[100] <- NA
-  h2 <- magqc:::.spike_detect(x, k = 21, nsigma = 6)
-  expect_equal(which(h2$outlier), 200)
+  h <- magqc:::.spike_detect(x, k = 21, nsigma = 6)
+  expect_equal(which(h$outlier), 200L)
+  expect_true(is.na(h$cleaned[100]))
 })
 
 test_that("mean bearing is taken on the circle", {

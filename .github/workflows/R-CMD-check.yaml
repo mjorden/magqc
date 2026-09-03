@@ -23,7 +23,7 @@ jobs:
       # Actions are pinned to commit SHAs (a `vN` tag can be moved); Dependabot
       # keeps the pins current. The version each SHA corresponds to is in the
       # trailing comment.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: r-lib/actions/setup-pandoc@465b7d8e732ca3921382b1674c59bada9cbf3399 # v2.13.0
       - uses: r-lib/actions/setup-r@465b7d8e732ca3921382b1674c59bada9cbf3399 # v2.13.0
         with:

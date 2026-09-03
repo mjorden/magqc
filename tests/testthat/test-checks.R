@@ -131,6 +131,40 @@ test_that("a zero-length flight-plan segment falls back to the best-fit line lou
   expect_true(all(is.finite(f$value)))
 })
 
+test_that("times built in any zone render in UTC everywhere (#8)", {
+  d <- as.data.frame(sim$data)
+  d$time <- as.POSIXct(format(d$time, "%Y-%m-%d %H:%M:%OS3", tz = "UTC"), tz = "America/Denver")
+  d$time <- d$time - 0   # drop magqc classes/attrs but keep the shifted instants
+  b <- sim$base
+  b$time <- as.POSIXct(format(b$time, "%Y-%m-%d %H:%M:%S", tz = "UTC"), tz = "America/Denver")
+  r <- run_qc(as_survey(d), spec = sim$spec, base = b)
+  expect_equal(attr(r$survey$time, "tzone"), "UTC")
+  expect_equal(attr(r$base$time, "tzone"), "UTC")
+  expect_equal(attr(r$flags$time_start, "tzone"), "UTC")
+  # 08:00 Denver wall-clock (UTC-6 in June) is 14:00 UTC, and that is what
+  # the survey, the base record and the flag descriptions all say
+  expect_equal(format(min(r$survey$time), "%H:%M"), "14:00")
+  expect_equal(format(r$diurnal$time[1], "%H:%M"), "14:00")
+  expect_true(any(grepl("1[4-9]:[0-9]{2}:[0-9]{2} to .* UTC", r$flags$description[r$flags$check == "diurnal"])))
+  expect_equal(nrow(r$flags), nrow(res$flags))                # same findings as the UTC-built survey
+})
+
+test_that("plots: series colours never recycle and the crossover RMS is the scorecard's (#6, #7)", {
+  cols <- magqc:::.series_colours(paste0(c("N", "NE", "E", "SE", "S"), "-bound"))
+  expect_length(cols, 5)
+  expect_false(anyNA(cols))
+  expect_equal(length(unique(cols)), 5)
+  cols9 <- magqc:::.series_colours(letters[1:9])
+  expect_false(anyNA(cols9))
+  p <- plotly::plotly_build(plot_crossovers(res))
+  ann <- p$x$layout$annotations[[1]]$text
+  expect_match(ann, sprintf("RMS %.2f nT", res$scorecard$metric[res$scorecard$check == "crossovers"]))
+  # a crossover with an NA misfit must not turn the annotation into "RMS NA"
+  r2 <- res; r2$crossovers$misfit[1] <- NA
+  p2 <- suppressWarnings(plotly::plotly_build(plot_crossovers(r2)))   # plotly notes the dropped NA point
+  expect_false(grepl("NA", p2$x$layout$annotations[[1]]$text))
+})
+
 test_that("checks accept a custom spec and a flight plan", {
   # with despiking disabled the 5-40 nT spikes reach the fourth difference, so
   # its limit has to clear 6 * 40 / 16 = 15 nT too

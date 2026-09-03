@@ -350,6 +350,7 @@ check_fourth_difference <- function(survey, spec) {
 #' @export
 check_diurnal <- function(base, spec, survey = NULL) {
   stopifnot(all(c("time", "mag_base") %in% names(base)))
+  attr(base$time, "tzone") <- "UTC"
   base <- base[order(base$time), ]
   t <- as.numeric(base$time); b <- base$mag_base; n <- length(b)
   empty <- function(note) .with_metric(.flag_cols(), "max chord departure (nT)", NA_real_,

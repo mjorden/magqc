@@ -5,8 +5,10 @@
 #' by line and then time, and a row index `.i` is attached so that flagged
 #' intervals can be mapped back to the exact samples they came from.
 #'
-#' Required columns: `line`, `time` (POSIXct), `x`, `y` (metres, any local or
-#' projected system), and one of `mag_raw` or `mag` (nT). Optional:
+#' Required columns: `line`, `time` (POSIXct in any time zone - the instants
+#' are kept and re-stamped to render in UTC, which is how every report and
+#' flag time is labelled), `x`, `y` (metres, any local or projected system),
+#' and one of `mag_raw` or `mag` (nT). Optional:
 #' `line_type` (`"traverse"` or `"tie"`; inferred from the line name when
 #' absent - names beginning with `T` are ties), `fid`, `radar_alt` (m AGL),
 #' `gps_alt` (m), `lon`, `lat`.
@@ -30,6 +32,10 @@ as_survey <- function(df, origin = NULL) {
   if (!inherits(df$time, "POSIXct")) {
     stop("`time` must be POSIXct.", call. = FALSE)
   }
+  # POSIXct instants are absolute; only their rendering depends on the
+  # tzone attribute. Everything downstream labels times "UTC", so render
+  # them that way regardless of the zone the caller built them in (#8).
+  attr(df$time, "tzone") <- "UTC"
   if (!"line_type" %in% names(df)) {
     df$line_type <- ifelse(grepl("^T", df$line, ignore.case = TRUE), "tie", "traverse")
   }

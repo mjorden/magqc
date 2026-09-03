@@ -50,6 +50,8 @@ run_qc <- function(survey, spec = survey_spec(), base = NULL, plan = NULL,
   if (!inherits(spec, "magqc_spec")) stop("`spec` must come from survey_spec().", call. = FALSE)
 
   if (!is.null(base)) {
+    if (!inherits(base$time, "POSIXct")) stop("`base$time` must be POSIXct.", call. = FALSE)
+    attr(base$time, "tzone") <- "UTC"   # rendered in UTC like the survey (#8)
     base <- base[order(base$time), ]
     datum <- stats::median(base$mag_base, na.rm = TRUE)
     # ties = mean: duplicate base timestamps are averaged rather than warned about (#2)

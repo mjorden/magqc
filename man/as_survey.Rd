@@ -23,8 +23,10 @@ by line and then time, and a row index \code{.i} is attached so that flagged
 intervals can be mapped back to the exact samples they came from.
 }
 \details{
-Required columns: \code{line}, \code{time} (POSIXct), \code{x}, \code{y} (metres, any local or
-projected system), and one of \code{mag_raw} or \code{mag} (nT). Optional:
+Required columns: \code{line}, \code{time} (POSIXct in any time zone - the instants
+are kept and re-stamped to render in UTC, which is how every report and
+flag time is labelled), \code{x}, \code{y} (metres, any local or projected system),
+and one of \code{mag_raw} or \code{mag} (nT). Optional:
 \code{line_type} (\code{"traverse"} or \code{"tie"}; inferred from the line name when
 absent - names beginning with \code{T} are ties), \code{fid}, \code{radar_alt} (m AGL),
 \code{gps_alt} (m), \code{lon}, \code{lat}.

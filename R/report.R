@@ -5,6 +5,8 @@
 # alone.
 .pal <- list(
   traverse  = "#2a78d6", tie = "#eb6834",
+  # categorical slots in fixed order - assigned by position, never recycled (#7)
+  series    = c("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"),
   good      = "#0ca30c", critical = "#d03b3b",
   ink       = "#0b0b0b", ink2 = "#52514e", muted = "#898781",
   grid      = "#e1e0d9", axis = "#c3c2b7", surface = "#fcfcfb",
@@ -24,6 +26,19 @@
     yaxis = list(title = ytitle, gridcolor = .pal$grid, zeroline = FALSE,
                  linecolor = .pal$axis, tickfont = list(color = .pal$muted)),
     legend = list(orientation = "h", x = 0, y = 1.08, font = list(color = .pal$ink2)))
+}
+
+#' Colours for a set of series names: fixed slot order, one per name
+#'
+#' More than eight distinct names (impossible for compass headings, the only
+#' current caller) would exceed the palette; those beyond it get the muted
+#' ink rather than a recycled hue that would alias two series (#7).
+#' @noRd
+.series_colours <- function(names) {
+  n <- length(names)
+  cols <- c(.pal$series[seq_len(min(n, length(.pal$series)))],
+            rep(.pal$muted, max(0, n - length(.pal$series))))
+  stats::setNames(cols, names)
 }
 
 #' Insert a row of NAs between lines so plotly does not join them across turns
@@ -280,7 +295,7 @@ plot_crossovers <- function(result) {
   xo$id <- seq_len(nrow(xo))
   xo$label <- paste(xo$traverse, "x", xo$tie)
   hs <- sort(unique(xo$heading))
-  cols <- stats::setNames(c(.pal$traverse, .pal$tie, .pal$muted)[seq_along(hs)], hs)
+  cols <- .series_colours(hs)
   lev <- result$levelling
   if (!is.null(lev)) {
     key <- paste(lev$crossovers$traverse, lev$crossovers$tie)
@@ -302,7 +317,10 @@ plot_crossovers <- function(result) {
                              hovertemplate = "%{text}: %{y:+.2f} nT after levelling<extra></extra>")
     }
   }
-  rms <- sqrt(mean(xo$misfit^2, na.rm = TRUE))
+  # the scorecard is the single source of truth for the statistic (#6)
+  sc <- result$scorecard
+  rms <- sc$metric[sc$check == "crossovers"]
+  if (!length(rms) || is.na(rms)) rms <- sqrt(mean(xo$misfit^2, na.rm = TRUE))
   rms_txt <- if (is.null(lev)) sprintf("RMS %.2f nT (limit %g)", rms, sp$max_crossover_rms) else
     sprintf("RMS %.2f nT before (limit %g), %.2f nT after %s levelling (limit %g)",
             rms, sp$max_crossover_rms, lev$rms[["after"]], lev$order, sp$max_levelled_rms)

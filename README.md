@@ -62,7 +62,8 @@ contract.
 | Fourth-difference noise | `(x[i-2] - 4x[i-1] + 6x[i] - 4x[i+1] + x[i+2]) / 16` on the despiked field | 0.05 nT |
 | Diurnal variation | base-station departure from a 60 s linear chord; samples flown inside an exceedance window are flagged | 3 nT |
 | Crossover misfit | traverse minus tie at every intersection, before levelling | RMS 2 nT; any single crossover 6 nT |
-| Heading error | difference in mean crossover misfit between opposing flight directions | 2 nT |
+| Heading error | difference in mean crossover misfit between opposing flight directions (pre-levelling) | 2 nT |
+| Post-levelling residual | RMS crossover misfit after tie-line levelling; crossings a per-line correction cannot reconcile are flagged | RMS 1 nT; any single crossover 3 nT |
 
 Every check returns the same flag table - one row per flagged interval with
 the row indices, fiducials, times, position, the value that tripped it and
@@ -81,6 +82,26 @@ different threshold.
 - a filterable table of every flagged interval
 - diagnostics: fourth-difference trace against its limit, terrain clearance against its band, the base-station record with exceedance windows shaded, and crossover misfit by flight direction
 - per-line statistics and the specification the survey was tested against
+
+## Tie-line levelling
+
+```r
+res$levelling
+#> <magqc tie-line levelling>
+#>   linear corrections on 14 traverses (13 linear, 1 constant, 0 without crossovers)
+#>   crossover RMS: 1.69 nT before, 0.15 nT after (41 crossovers)
+lev <- level_ties(res, order = "constant")   # or run it standalone on a survey
+lev$coefficients                              # line, order, n_crossovers, c0 (nT), c1 (nT/m)
+```
+
+`run_qc()` levels by default when tie lines exist: each traverse gets a
+least-squares offset (plus a drift term in distance along the line when it
+has three or more crossings), tie lines are held fixed, and the levelled
+field is added as `mag_lev`. The scorecard reports the crossover RMS
+*before* levelling (the acceptance statistic) and the residual *after*
+it; a crossing that survives the correction is flagged, because heading
+error, lag or a bad tie do not level out. The noise checks and the
+heading-error check keep operating on the unlevelled field.
 
 ## Interactive viewer
 
@@ -189,7 +210,7 @@ report render.
 
 ## Not yet
 
-- levelling (tie-line, statistical, micro-levelling) and post-levelling residuals
+- statistical levelling and micro-levelling (tie-line levelling is in)
 - IGRF removal and lag correction
 - reading a flight plan from KML / Geosoft PLT
 - gradiometer and multi-sensor configurations

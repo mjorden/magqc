@@ -25,7 +25,9 @@ survey_spec(
   max_crossover_rms = 2,
   max_crossover_abs = 6,
   max_heading_error = 2,
-  max_gap = 1
+  max_gap = 1,
+  max_levelled_rms = 1,
+  max_levelled_abs = 3
 )
 }
 \arguments{
@@ -84,6 +86,14 @@ crossover is flagged, nT.}
 opposing flight directions, nT.}
 
 \item{max_gap}{Longest accepted break in the data stream, seconds.}
+
+\item{max_levelled_rms}{Maximum RMS crossover misfit \emph{after} tie-line
+levelling, nT (see \code{\link[=level_ties]{level_ties()}}).}
+
+\item{max_levelled_abs}{Per-crossover misfit after levelling above which
+the crossing is flagged, nT. A crossing that a low-order per-line
+correction cannot reconcile points at a real problem - heading error,
+lag, or a bad tie - rather than ordinary line-to-line drift.}
 }
 \value{
 An object of class \code{magqc_spec}.

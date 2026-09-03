@@ -42,6 +42,12 @@
 #' @param max_heading_error Maximum difference in mean crossover misfit between
 #'   opposing flight directions, nT.
 #' @param max_gap Longest accepted break in the data stream, seconds.
+#' @param max_levelled_rms Maximum RMS crossover misfit *after* tie-line
+#'   levelling, nT (see [level_ties()]).
+#' @param max_levelled_abs Per-crossover misfit after levelling above which
+#'   the crossing is flagged, nT. A crossing that a low-order per-line
+#'   correction cannot reconcile points at a real problem - heading error,
+#'   lag, or a bad tie - rather than ordinary line-to-line drift.
 #'
 #' @return An object of class `magqc_spec`.
 #' @examples
@@ -68,7 +74,9 @@ survey_spec <- function(line_spacing = 200,
                         max_crossover_rms = 2.0,
                         max_crossover_abs = 6.0,
                         max_heading_error = 2.0,
-                        max_gap = 1.0) {
+                        max_gap = 1.0,
+                        max_levelled_rms = 1.0,
+                        max_levelled_abs = 3.0) {
 
   .assert_pos <- function(v, nm) {
     if (!is.numeric(v) || length(v) != 1L || !is.finite(v) || v <= 0) {
@@ -80,7 +88,7 @@ survey_spec <- function(line_spacing = 200,
                "clearance_tol", "fourth_diff_tol", "spike_nsigma",
                "spike_window", "max_diurnal_dev", "diurnal_window",
                "max_crossover_rms", "max_crossover_abs", "max_heading_error",
-               "max_gap")) {
+               "max_gap", "max_levelled_rms", "max_levelled_abs")) {
     .assert_pos(get(nm), nm)
   }
   if (spike_window %% 2 == 0) {
@@ -112,7 +120,9 @@ survey_spec <- function(line_spacing = 200,
          max_crossover_rms = max_crossover_rms,
          max_crossover_abs = max_crossover_abs,
          max_heading_error = max_heading_error,
-         max_gap = max_gap),
+         max_gap = max_gap,
+         max_levelled_rms = max_levelled_rms,
+         max_levelled_abs = max_levelled_abs),
     class = "magqc_spec"
   )
 }
@@ -135,5 +145,6 @@ print.magqc_spec <- function(x, ...) {
   fmt("crossover RMS limit", x$max_crossover_rms, " nT")
   fmt("heading error limit", x$max_heading_error, " nT")
   fmt("max data gap", x$max_gap, " s")
+  fmt("post-levelling RMS", sprintf("%g nT (any crossing %g)", x$max_levelled_rms, x$max_levelled_abs), "")
   invisible(x)
 }

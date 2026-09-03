@@ -281,6 +281,11 @@ plot_crossovers <- function(result) {
   xo$label <- paste(xo$traverse, "x", xo$tie)
   hs <- sort(unique(xo$heading))
   cols <- stats::setNames(c(.pal$traverse, .pal$tie, .pal$muted)[seq_along(hs)], hs)
+  lev <- result$levelling
+  if (!is.null(lev)) {
+    key <- paste(lev$crossovers$traverse, lev$crossovers$tie)
+    xo$misfit_after <- lev$crossovers$misfit_after[match(paste(xo$traverse, xo$tie), key)]
+  }
   p <- plotly::plot_ly()
   for (h in hs) {
     dd <- xo[xo$heading == h, ]
@@ -289,8 +294,18 @@ plot_crossovers <- function(result) {
                                          line = list(color = .pal$surface, width = 1.5)),
                            name = h, text = ~label,
                            hovertemplate = "%{text}: %{y:+.2f} nT<extra></extra>")
+    if (!is.null(lev)) {
+      p <- plotly::add_trace(p, data = dd, x = ~id, y = ~misfit_after, type = "scatter", mode = "markers",
+                             marker = list(color = cols[[h]], size = 8, symbol = "circle-open",
+                                           line = list(width = 1.5)),
+                             name = paste(h, "after levelling"), text = ~label,
+                             hovertemplate = "%{text}: %{y:+.2f} nT after levelling<extra></extra>")
+    }
   }
-  rms <- sqrt(mean(xo$misfit^2))
+  rms <- sqrt(mean(xo$misfit^2, na.rm = TRUE))
+  rms_txt <- if (is.null(lev)) sprintf("RMS %.2f nT (limit %g)", rms, sp$max_crossover_rms) else
+    sprintf("RMS %.2f nT before (limit %g), %.2f nT after %s levelling (limit %g)",
+            rms, sp$max_crossover_rms, lev$rms[["after"]], lev$order, sp$max_levelled_rms)
   p <- .plotly_base(p, "traverse - tie misfit (nT)", "crossover (ordered by traverse, tie)")
   plotly::layout(
     p, hovermode = "closest",
@@ -304,7 +319,7 @@ plot_crossovers <- function(result) {
     annotations = list(list(
       xref = "paper", yref = "paper", x = 1, y = 1.02, showarrow = FALSE,
       xanchor = "right", yanchor = "bottom", font = list(color = .pal$ink2, size = 12),
-      text = sprintf("RMS %.2f nT (limit %g)", rms, sp$max_crossover_rms))))
+      text = rms_txt)))
 }
 
 # ---- per-line profile ------------------------------------------------------------
@@ -338,6 +353,12 @@ plot_line_profile <- function(result, line) {
   p1 <- plotly::plot_ly(x = along, y = d$mag, type = "scattergl", mode = "lines",
                         line = list(color = .pal$traverse, width = 1.2), text = hover,
                         hovertemplate = "%{y:.2f} nT<br>%{text}<extra></extra>", name = "field")
+  if ("mag_lev" %in% names(d) && any(is.finite(d$mag_lev)) && !isTRUE(all.equal(d$mag_lev, d$mag))) {
+    p1 <- plotly::add_trace(p1, x = along, y = d$mag_lev, type = "scattergl", mode = "lines",
+                            line = list(color = .pal$tie, width = 1.2, dash = "dash"),
+                            hovertemplate = "%{y:.2f} nT levelled<extra></extra>",
+                            name = "levelled", inherit = FALSE)
+  }
   p2 <- plotly::plot_ly(x = along, y = d4, type = "scattergl", mode = "lines",
                         line = list(color = .pal$traverse, width = 1), text = hover,
                         hovertemplate = "%{y:.4f} nT<br>%{text}<extra></extra>", name = "4th diff")

@@ -61,6 +61,24 @@ if (length(leftover)) {
 
 unlink(dest, recursive = TRUE)
 shinylive::export(app_src, dest, quiet = FALSE)
+
+# A first visit downloads the webR runtime and the packages (a minute or two);
+# shinylive shows only a spinner, so add a note that removes itself once the
+# app's iframe has rendered.
+index <- file.path(dest, "index.html")
+html <- readLines(index, warn = FALSE)
+splash <- c(
+  '<div id="viewer-splash" style="position:fixed;left:0;right:0;top:58%;text-align:center;',
+  'font:14px system-ui,-apple-system,\'Segoe UI\',sans-serif;color:#52514e;z-index:0;pointer-events:none">',
+  'Loading R in your browser (webR) &mdash; the first visit downloads the runtime and packages and can take a minute or two.',
+  '</div>',
+  '<script>(function(){var t=setInterval(function(){var f=document.querySelector("iframe");',
+  'var d=f&&f.contentDocument;if(d&&d.querySelector(".bslib-value-box")){var s=document.getElementById("viewer-splash");',
+  'if(s)s.remove();clearInterval(t);}},500);})();</script>')
+body_end <- grep("</body>", html, fixed = TRUE)
+stopifnot(length(body_end) == 1)
+html <- append(html, splash, after = body_end - 1)
+writeLines(html, index)
 cat("Static viewer written to", normalizePath(dest), "\n")
 
 if ("--serve" %in% args) {

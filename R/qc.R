@@ -2,11 +2,11 @@
   tibble::tibble(
     check = c("sample_interval", "along_line_spacing", "line_deviation",
               "line_separation", "clearance", "spikes", "fourth_difference",
-              "diurnal", "crossovers", "heading_error"),
+              "diurnal", "crossovers", "heading_error", "levelling_residual"),
     label = c("Data gaps", "Along-line sampling", "Departure from line",
               "Line separation", "Terrain clearance", "Spikes",
               "Fourth-difference noise", "Diurnal variation",
-              "Crossover misfit", "Heading error"))
+              "Crossover misfit", "Heading error", "Post-levelling residual"))
 }
 
 #' Run every QC check on a survey
@@ -25,15 +25,22 @@
 #'   `mag` is set to `mag_raw` minus the base-station departure from its
 #'   median level before any field statistic is computed.
 #' @param plan Optional flight plan; see [check_line_deviation()].
-#' @return A list of class `magqc_result` with elements `survey`, `base`,
-#'   `spec`, `flags`, `scorecard`, `lines`, `stats`, `crossovers`, `diurnal`
-#'   (base-station statistics), `fourth_difference` (per-sample series) and
-#'   `heading` (misfit by flight direction).
+#' @param levelling Run tie-line levelling ([level_ties()]) after the checks
+#'   and report the post-levelling residual on the scorecard? Skipped
+#'   silently when there are no crossovers.
+#' @param levelling_order Passed to [level_ties()] as `order`.
+#' @return A list of class `magqc_result` with elements `survey` (with a
+#'   `mag_lev` column when levelling ran), `base`, `spec`, `flags`,
+#'   `scorecard`, `lines`, `stats`, `crossovers`, `diurnal` (base-station
+#'   statistics), `fourth_difference` (per-sample series), `heading` (misfit
+#'   by flight direction) and `levelling` (a `magqc_levelling`, or `NULL`).
 #' @examples
 #' res <- run_qc(sim_survey(seed = 3))
 #' res$scorecard
+#' res$levelling
 #' @export
-run_qc <- function(survey, spec = survey_spec(), base = NULL, plan = NULL) {
+run_qc <- function(survey, spec = survey_spec(), base = NULL, plan = NULL,
+                   levelling = TRUE, levelling_order = c("linear", "constant")) {
   if (inherits(survey, "magqc_sim")) {
     if (missing(spec)) spec <- survey$spec
     base <- base %||% survey$base
@@ -50,6 +57,11 @@ run_qc <- function(survey, spec = survey_spec(), base = NULL, plan = NULL) {
   }
 
   xo <- crossovers(survey)
+  lev <- NULL
+  if (isTRUE(levelling) && nrow(xo)) {
+    lev <- level_ties(survey, xo, order = match.arg(levelling_order))
+    survey$mag_lev <- lev$mag_lev
+  }
   checks <- list(
     sample_interval    = check_sample_interval(survey, spec),
     along_line_spacing = check_along_line_spacing(survey, spec),
@@ -62,7 +74,8 @@ run_qc <- function(survey, spec = survey_spec(), base = NULL, plan = NULL) {
       .with_metric(.flag_cols(), "max chord departure (nT)", NA_real_,
                    spec$max_diurnal_dev, note = "no base-station record supplied"),
     crossovers         = check_crossovers(xo, survey, spec),
-    heading_error      = check_heading_error(xo, survey, spec))
+    heading_error      = check_heading_error(xo, survey, spec),
+    levelling_residual = check_levelling_residual(lev, survey, spec))
 
   flags <- .bind_flags(unname(checks))
   reg <- .check_registry()
@@ -81,11 +94,16 @@ run_qc <- function(survey, spec = survey_spec(), base = NULL, plan = NULL) {
   }
 
   scorecard <- reg
-  scorecard$metric_label <- vapply(checks, function(f) attr(f, "metric")$label, character(1))
-  scorecard$metric <- vapply(checks, function(f) as.numeric(attr(f, "metric")$value), numeric(1))
-  scorecard$threshold <- vapply(checks, function(f) as.numeric(attr(f, "metric")$threshold), numeric(1))
-  scorecard$note <- vapply(checks, function(f) attr(f, "metric")$note %||% NA_character_, character(1))
-  scorecard$n_flags <- vapply(checks, nrow, integer(1))
+  # index by name, never by position (#9): the registry order is the report
+  # order and must not have to match the order the checks were run in
+  stopifnot(setequal(names(checks), reg$check))
+  metric_of <- function(chk, field) attr(checks[[chk]], "metric")[[field]]
+  by_check <- function(f, type) unname(vapply(reg$check, f, type))
+  scorecard$metric_label <- by_check(function(chk) metric_of(chk, "label"), character(1))
+  scorecard$metric <- by_check(function(chk) as.numeric(metric_of(chk, "value")), numeric(1))
+  scorecard$threshold <- by_check(function(chk) as.numeric(metric_of(chk, "threshold")), numeric(1))
+  scorecard$note <- by_check(function(chk) metric_of(chk, "note") %||% NA_character_, character(1))
+  scorecard$n_flags <- by_check(function(chk) nrow(checks[[chk]]), integer(1))
   scorecard$n_samples <- per_check_samples
   scorecard$pct_samples <- 100 * per_check_samples / nrow(survey)
   scorecard$status <- ifelse(
@@ -133,7 +151,8 @@ run_qc <- function(survey, spec = survey_spec(), base = NULL, plan = NULL) {
     scorecard = scorecard, lines = lines, stats = stats, crossovers = xo,
     diurnal = attr(checks$diurnal, "base_stats"),
     fourth_difference = attr(checks$fourth_difference, "series"),
-    heading = attr(checks$heading_error, "by_heading")),
+    heading = attr(checks$heading_error, "by_heading"),
+    levelling = lev),
     class = "magqc_result")
 }
 

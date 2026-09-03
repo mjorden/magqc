@@ -34,7 +34,8 @@ spec_fields <- c(
   fourth_diff_tol = "4th-difference limit (nT)", spike_nsigma = "Spike threshold (sigma)",
   max_diurnal_dev = "Diurnal limit (nT)", diurnal_window = "Diurnal chord (s)",
   max_crossover_rms = "Crossover RMS limit (nT)", max_crossover_abs = "Single crossover limit (nT)",
-  max_heading_error = "Heading error limit (nT)", max_gap = "Max data gap (s)")
+  max_heading_error = "Heading error limit (nT)", max_gap = "Max data gap (s)",
+  max_levelled_rms = "Post-levelling RMS limit (nT)", max_levelled_abs = "Post-levelling crossover limit (nT)")
 
 spec_inputs <- lapply(names(spec_fields), function(f) {
   numericInput(f, spec_fields[[f]], value = defaults[[f]], width = "100%")
@@ -68,8 +69,8 @@ ui <- page_sidebar(
           textInput("col_alt", "radar altimeter column (blank if none)", "RALT"),
           dateInput("date", "Flight date (UTC; time column is seconds since midnight)"),
           layout_columns(
-            numericInput("lon0", "Origin lon (optional)", NA, width = "100%"),
-            numericInput("lat0", "Origin lat (optional)", NA, width = "100%")),
+            textInput("lon0", "Origin lon (optional)", ""),
+            textInput("lat0", "Origin lat (optional)", "")),
           fileInput("base", "Base station CSV (time, mag_base)", accept = c(".csv", ".txt")))),
       accordion_panel("Specification", spec_inputs)),
     actionButton("run", "Run QC", class = "btn-primary w-100"),
@@ -119,7 +120,8 @@ server <- function(input, output, session) {
     req(input$xyz)
     col_map <- c(x = input$col_x, y = input$col_y, time = input$col_time, mag_raw = input$col_mag)
     if (nzchar(trimws(input$col_alt))) col_map <- c(col_map, radar_alt = trimws(input$col_alt))
-    origin <- if (is.finite(input$lon0) && is.finite(input$lat0)) c(lon = input$lon0, lat = input$lat0)
+    lon0 <- suppressWarnings(as.numeric(input$lon0)); lat0 <- suppressWarnings(as.numeric(input$lat0))
+    origin <- if (is.finite(lon0) && is.finite(lat0)) c(lon = lon0, lat = lat0)
     survey <- read_xyz(input$xyz$datapath, col_map = col_map,
                        time_origin = as.POSIXct(input$date, tz = "UTC"), origin = origin)
     base <- NULL

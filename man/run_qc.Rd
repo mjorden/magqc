@@ -4,7 +4,14 @@
 \alias{run_qc}
 \title{Run every QC check on a survey}
 \usage{
-run_qc(survey, spec = survey_spec(), base = NULL, plan = NULL)
+run_qc(
+  survey,
+  spec = survey_spec(),
+  base = NULL,
+  plan = NULL,
+  levelling = TRUE,
+  levelling_order = c("linear", "constant")
+)
 }
 \arguments{
 \item{survey}{A \code{magqc_survey} from \code{\link[=as_survey]{as_survey()}}, a plain data frame that
@@ -18,12 +25,19 @@ run_qc(survey, spec = survey_spec(), base = NULL, plan = NULL)
 median level before any field statistic is computed.}
 
 \item{plan}{Optional flight plan; see \code{\link[=check_line_deviation]{check_line_deviation()}}.}
+
+\item{levelling}{Run tie-line levelling (\code{\link[=level_ties]{level_ties()}}) after the checks
+and report the post-levelling residual on the scorecard? Skipped
+silently when there are no crossovers.}
+
+\item{levelling_order}{Passed to \code{\link[=level_ties]{level_ties()}} as \code{order}.}
 }
 \value{
-A list of class \code{magqc_result} with elements \code{survey}, \code{base},
-\code{spec}, \code{flags}, \code{scorecard}, \code{lines}, \code{stats}, \code{crossovers}, \code{diurnal}
-(base-station statistics), \code{fourth_difference} (per-sample series) and
-\code{heading} (misfit by flight direction).
+A list of class \code{magqc_result} with elements \code{survey} (with a
+\code{mag_lev} column when levelling ran), \code{base}, \code{spec}, \code{flags},
+\code{scorecard}, \code{lines}, \code{stats}, \code{crossovers}, \code{diurnal} (base-station
+statistics), \code{fourth_difference} (per-sample series), \code{heading} (misfit
+by flight direction) and \code{levelling} (a \code{magqc_levelling}, or \code{NULL}).
 }
 \description{
 Applies the diurnal correction (when a base-station record is supplied),
@@ -35,4 +49,5 @@ renders.
 \examples{
 res <- run_qc(sim_survey(seed = 3))
 res$scorecard
+res$levelling
 }

@@ -143,7 +143,7 @@ if (!is.null(res$diurnal)) magqc::plot_diurnal(res)
 ```
 
 ```{r xo-hdr, results="asis"}
-if (nrow(res$crossovers)) cat("### Crossover misfit\n\nTraverse minus tie at each intersection, before levelling. A systematic split between flight directions is heading error.\n")
+if (nrow(res$crossovers)) cat("### Crossover misfit\n\nTraverse minus tie at each intersection: filled markers before levelling, open markers after. A systematic split between flight directions is heading error.\n")
 ```
 
 ```{r crossovers}
@@ -180,6 +180,10 @@ rows <- list(
   c("Crossover misfit", sprintf("RMS ≤ %g nT; any single crossover ≤ %g nT", sp$max_crossover_rms, sp$max_crossover_abs)),
   c("Heading error", sprintf("≤ %g nT", sp$max_heading_error)),
   c("Max data gap", sprintf("%g s", sp$max_gap)),
+  c("Post-levelling residual", sprintf("RMS ≤ %g nT; any single crossover ≤ %g nT", sp$max_levelled_rms, sp$max_levelled_abs)),
+  c("Tie-line levelling", if (!is.null(res$levelling)) sprintf("%s corrections per traverse (%d linear, %d constant); crossover RMS %.2f → %.2f nT",
+        res$levelling$order, sum(res$levelling$coefficients$order == "linear"), sum(res$levelling$coefficients$order == "constant"),
+        res$levelling$rms[["before"]], res$levelling$rms[["after"]]) else "not run (no crossovers)"),
   c("Diurnal correction", if (isTRUE(st$diurnal_corrected)) "applied from base-station record" else "not applied (no base-station record)"))
 cat('<table class="sc"><tbody>')
 for (r in rows) cat(sprintf('<tr><td>%s</td><td>%s</td></tr>', r[1], r[2]))
@@ -198,7 +202,8 @@ cat('</tbody></table>')
 - **Fourth-difference noise** - `(x[i-2] - 4x[i-1] + 6x[i] - 4x[i+1] + x[i+2])`, optionally divided by 16, on the despiked field. This is the standard airborne noise-envelope statistic; it suppresses the geological signal and leaves the sensor noise.
 - **Diurnal variation** - the base-station record is compared with a straight chord over a sliding window of the stated length; the peak departure is the statistic. Survey samples acquired inside a window that exceeds the limit are flagged.
 - **Crossover misfit** - each traverse/tie intersection is located from the two lines' best-fit axes and the field is interpolated on each line at that point. RMS of traverse minus tie is the statistic.
-- **Heading error** - difference in mean crossover misfit between traverses flown in opposite directions.
+- **Heading error** - difference in mean crossover misfit between traverses flown in opposite directions, computed on pre-levelling misfits.
+- **Post-levelling residual** - each traverse receives a least-squares offset (and, with three or more crossings, a drift term in distance along the line) fitted to its crossover misfits, with tie lines held fixed. The RMS misfit after that correction is the statistic; a crossing whose residual still exceeds the limit points at a problem a low-order correction cannot absorb. The levelled field is kept as a separate channel so the noise checks stay on unlevelled data.
 </div>
 
 <p class="meta">Generated `r format(Sys.time(), "%Y-%m-%d %H:%M %Z")` with magqc `r as.character(utils::packageVersion("magqc"))`.</p>

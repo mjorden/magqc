@@ -427,6 +427,16 @@ check_crossovers <- function(xo, survey, spec) {
   c("N", "NE", "E", "SE", "S", "SW", "W", "NW")[1 + (round(bearing / 45) %% 8)]
 }
 
+#' Circular mean of bearings in degrees
+#'
+#' An arithmetic mean of 359 and 1 is 180; lines flown due north wander
+#' either side of 360, so their mean heading must be taken on the circle.
+#' @noRd
+.mean_bearing <- function(bearing) {
+  r <- .deg2rad(bearing)
+  .rad2deg(atan2(mean(sin(r)), mean(cos(r)))) %% 360
+}
+
 #' @rdname checks
 #' @export
 check_heading_error <- function(xo, survey, spec) {
@@ -447,8 +457,8 @@ check_heading_error <- function(xo, survey, spec) {
   if (nrow(by) < 2) return(empty)
   fwd <- by[by$forward, ]; rev <- by[!by$forward, ]
   he <- fwd$mean_misfit - rev$mean_misfit
-  fwd_lbl <- .compass(mean(hdg$bearing[hdg$forward]))
-  rev_lbl <- .compass(mean(hdg$bearing[!hdg$forward]))
+  fwd_lbl <- .compass(.mean_bearing(hdg$bearing[hdg$forward]))
+  rev_lbl <- .compass(.mean_bearing(hdg$bearing[!hdg$forward]))
   by$heading <- ifelse(by$forward, fwd_lbl, rev_lbl)
   flags <- if (abs(he) > spec$max_heading_error) {
     tibble::tibble(

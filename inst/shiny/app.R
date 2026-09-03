@@ -57,7 +57,7 @@ ui <- page_sidebar(
           "input.source == 'sim'",
           layout_columns(
             numericInput("seed", "Seed", 42, width = "100%"),
-            numericInput("n_lines", "Traverse lines", 14, min = 12, step = 1, width = "100%")),
+            numericInput("n_lines", "Traverse lines", 14, min = 2, step = 1, width = "100%")),
           checkboxInput("defects", "Inject defects", TRUE)),
         conditionalPanel(
           "input.source == 'upload'",
@@ -140,7 +140,7 @@ server <- function(input, output, session) {
     withProgress(message = "Running QC checks…", value = 0.3, {
       tryCatch({
         if (input$source == "sim") {
-          sim <- sim_survey(seed = input$seed, n_lines = max(12, input$n_lines),
+          sim <- sim_survey(seed = input$seed, n_lines = max(2, input$n_lines),
                             defects = isTRUE(input$defects))
           run_qc(sim, spec = spec())
         } else {

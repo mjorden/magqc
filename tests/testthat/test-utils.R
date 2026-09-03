@@ -39,6 +39,13 @@ test_that("spike detector finds a spike on a steep smooth curve and nothing else
   expect_equal(which(h2$outlier), 200)
 })
 
+test_that("mean bearing is taken on the circle", {
+  ang_diff <- function(a, b) abs(((a - b + 180) %% 360) - 180)
+  expect_lt(ang_diff(magqc:::.mean_bearing(c(359, 1)), 0), 1e-8)
+  expect_lt(ang_diff(magqc:::.mean_bearing(c(170, 190)), 180), 1e-8)
+  expect_equal(magqc:::.compass(magqc:::.mean_bearing(c(358.5, 0.5, 1.2))), "N")
+})
+
 test_that("tls line offsets are perpendicular distances", {
   x <- seq(0, 100, by = 1); y <- 2 * x + 5
   y[50] <- y[50] + sqrt(5) * 3  # 3 m perpendicular offset from a slope-2 line

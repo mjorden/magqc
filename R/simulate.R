@@ -19,7 +19,15 @@
 #' * a magnetic-storm excursion on the base station (diurnal)
 #' * a +2.5 nT bias on southbound lines (heading error, via crossovers)
 #'
-#' @param n_lines Number of traverse lines.
+#' Defect targets are chosen from the generated geometry (a traverse by its
+#' position in the block, a window by fraction of the line or by duration),
+#' so any `n_lines >= 2` and any line length work; a defect that cannot be
+#' placed on a very short line is skipped with a warning and gets no `truth`
+#' row. With the default arguments the targets are L1050 (noise), L1090
+#' (off-plan), L1110 (mispositioned), L1030 (clearance), L1070 (dropout) and
+#' L1010 (sparse).
+#'
+#' @param n_lines Number of traverse lines (at least 2).
 #' @param line_spacing Traverse spacing, m.
 #' @param line_length Traverse length, m.
 #' @param tie_spacing Tie-line spacing, m.
@@ -47,6 +55,11 @@ sim_survey <- function(n_lines = 14, line_spacing = 200, line_length = 7000,
                        origin = c(lon = -108.5, lat = 43.2),
                        start_time = as.POSIXct("2024-06-14 08:00:00", tz = "UTC"),
                        defects = TRUE, seed = 42) {
+  if (!is.numeric(n_lines) || n_lines < 2) stop("`n_lines` must be at least 2.", call. = FALSE)
+  if (line_length <= 0 || tie_spacing <= 0 || line_spacing <= 0 || sample_rate <= 0 || ground_speed <= 0) {
+    stop("`line_length`, `line_spacing`, `tie_spacing`, `sample_rate` and `ground_speed` must be positive.",
+         call. = FALSE)
+  }
   set.seed(seed)
   dt <- 1 / sample_rate
   step <- ground_speed * dt
@@ -66,7 +79,9 @@ sim_survey <- function(n_lines = 14, line_spacing = 200, line_length = 7000,
   }
   x_min <- -100; x_max <- (n_lines - 1) * line_spacing + 100
   along_tie <- seq(x_min, x_max, by = step)
-  tie_y <- seq(1000, line_length - 1000, by = tie_spacing)
+  # ties 1 km in from each end at the tie spacing; a block too short for that
+  # gets a single tie across the middle
+  tie_y <- if (line_length >= 2000) seq(1000, line_length - 1000, by = tie_spacing) else line_length / 2
   for (j in seq_along(tie_y)) {
     eastbound <- j %% 2 == 1
     x <- if (eastbound) along_tie else rev(along_tie)
@@ -124,51 +139,93 @@ sim_survey <- function(n_lines = 14, line_spacing = 200, line_length = 7000,
       defect = defect, check = check, line = line,
       time_start = ts, time_end = te, detail = detail))
   }
-  line_rows <- function(nm) which(d$line == nm)
   heading_bias <- rep(0, nrow(d))
   drop_rows <- integer(0)
   spike <- rep(0, nrow(d))
 
   if (isTRUE(defects)) {
+    # Defect targets are derived from the geometry that was actually
+    # generated - a traverse chosen by its position in the block, a window
+    # chosen as a fraction of that line's samples or as a duration - so the
+    # simulator stays truthful for any n_lines / line_length / sample_rate
+    # (#3, #4). With the defaults these resolve to the same lines and nearly
+    # the same samples as the original hard-coded targets.
+    tr_lines <- unique(d$line[d$line_type == "traverse"])
+    targets <- .pick_lines(tr_lines, c(noisy = 0.43, off_plan = 0.71, misposition = 0.86,
+                                       clearance = 0.29, dropout = 0.57, sparse = 0.14))
+    defect_rows <- function(defect, line, f0 = 0, f1 = 1, min_samples = 10L) {
+      rows <- which(d$line == line)
+      n <- length(rows)
+      if (n < min_samples) {
+        warning(sprintf("sim_survey(): skipping defect '%s' - line %s has %d samples, needs at least %d",
+                        defect, line, n, min_samples), call. = FALSE)
+        return(integer(0))
+      }
+      rows[max(1L, round(f0 * n)):min(n, max(1L, round(f1 * n)))]
+    }
+
     # heading error: southbound lines read high
     heading_bias[d$dir == "S"] <- 2.5
     add_truth("heading bias", "heading_error", NA_character_, integer(0),
               "+2.5 nT on southbound traverses")
 
-    # noisy segment
-    r <- line_rows("L1050")[400:700]
-    noise_sd[r] <- 0.25
-    add_truth("noisy segment", "fourth_difference", "L1050", r, "sensor noise 0.25 nT")
+    # noisy segment: sensor noise raised over the middle of the line
+    ln <- targets[["noisy"]]
+    r <- defect_rows("noisy segment", ln, 0.34, 0.60, min_samples = 60L)
+    if (length(r)) {
+      noise_sd[r] <- 0.25
+      add_truth("noisy segment", "fourth_difference", ln, r, "sensor noise 0.25 nT")
+    }
 
     # off-plan stretch (smooth 45 m excursion)
-    r <- line_rows("L1090")[300:800]
-    d$x[r] <- d$x[r] + 45 * sin(seq(0, pi, length.out = length(r)))
-    add_truth("off-plan excursion", "line_deviation", "L1090", r, "45 m east of plan")
+    ln <- targets[["off_plan"]]
+    r <- defect_rows("off-plan excursion", ln, 0.26, 0.69, min_samples = 60L)
+    if (length(r)) {
+      d$x[r] <- d$x[r] + 45 * sin(seq(0, pi, length.out = length(r)))
+      add_truth("off-plan excursion", "line_deviation", ln, r, "45 m east of plan")
+    }
 
     # whole line mispositioned
-    r <- line_rows("L1110")
-    d$x[r] <- d$x[r] + 60
-    add_truth("line mispositioned", "line_separation", "L1110", r, "flown 60 m east")
+    ln <- targets[["misposition"]]
+    r <- defect_rows("line mispositioned", ln)
+    if (length(r)) {
+      d$x[r] <- d$x[r] + 60
+      add_truth("line mispositioned", "line_separation", ln, r, "flown 60 m east")
+    }
 
     # clearance excursion
-    r <- line_rows("L1030")[200:500]
-    d$radar_alt[r] <- d$radar_alt[r] + 35 * sin(seq(0, pi, length.out = length(r)))
-    add_truth("clearance excursion", "clearance", "L1030", r, "up to 35 m above nominal")
+    ln <- targets[["clearance"]]
+    r <- defect_rows("clearance excursion", ln, 0.17, 0.43, min_samples = 60L)
+    if (length(r)) {
+      d$radar_alt[r] <- d$radar_alt[r] + 35 * sin(seq(0, pi, length.out = length(r)))
+      add_truth("clearance excursion", "clearance", ln, r, "up to 35 m above nominal")
+    }
 
-    # dropout
-    r <- line_rows("L1070")[600:720]
-    drop_rows <- c(drop_rows, r)
-    add_truth("data dropout", "sample_interval", "L1070", r, "12 s of records missing")
+    # dropout: 12 s of records removed from the middle of the line
+    ln <- targets[["dropout"]]
+    n_drop <- as.integer(round(12 * sample_rate))
+    r <- defect_rows("data dropout", ln, 0.51, 0.51, min_samples = 4L * n_drop)
+    if (length(r)) {
+      r <- r[1] + seq_len(n_drop) - 1L
+      drop_rows <- c(drop_rows, r)
+      add_truth("data dropout", "sample_interval", ln, r, "12 s of records missing")
+    }
 
-    # sparse sampling
-    r <- line_rows("L1010")[800:900]
-    drop_rows <- c(drop_rows, r[seq(2, length(r), by = 2)])
-    add_truth("sparse sampling", "along_line_spacing", "L1010", r, "every second sample missing")
+    # sparse sampling: every second sample missing over ~10 s
+    ln <- targets[["sparse"]]
+    n_sparse <- as.integer(round(10 * sample_rate))
+    r <- defect_rows("sparse sampling", ln, 0.69, 0.69, min_samples = 4L * n_sparse)
+    if (length(r)) {
+      r <- r[1] + seq_len(n_sparse) - 1L
+      drop_rows <- c(drop_rows, r[seq(2, length(r), by = 2)])
+      add_truth("sparse sampling", "along_line_spacing", ln, r, "every second sample missing")
+    }
 
     # spikes
     tr <- setdiff(which(d$line_type == "traverse"), drop_rows)
-    sp <- sort(sample(tr, 25))
-    spike[sp] <- sample(c(-1, 1), 25, TRUE) * stats::runif(25, 5, 40)
+    n_spikes <- min(25L, length(tr))
+    sp <- sort(sample(tr, n_spikes))
+    spike[sp] <- sample(c(-1, 1), n_spikes, TRUE) * stats::runif(n_spikes, 5, 40)
     for (k in sp) add_truth("spike", "spikes", d$line[k], k, sprintf("%.1f nT", spike[k]))
 
     # diurnal storm on the base station, six minutes starting 40% of the way
@@ -192,6 +249,8 @@ sim_survey <- function(n_lines = 14, line_spacing = 200, line_length = 7000,
     stats::approx(t_base, base$mag_base - 54000, xout = d$t)$y
   d$time <- start_time + d$t
 
+  # never let an NA reach the negative subscript (#3)
+  drop_rows <- unique(drop_rows[!is.na(drop_rows)])
   if (length(drop_rows)) d <- d[-drop_rows, ]
   d$fid <- seq_len(nrow(d))
   d$dir <- NULL; d$t <- NULL; d$dem <- NULL
@@ -204,6 +263,27 @@ sim_survey <- function(n_lines = 14, line_spacing = 200, line_length = 7000,
   structure(list(data = as_survey(d), base = base, truth = truth, spec = spec,
                  origin = origin),
             class = "magqc_sim")
+}
+
+#' Pick distinct traverse lines by relative position in the block
+#'
+#' `fracs` are positions in (0, 1]; each maps to the nearest line, and when
+#' two defects would land on the same line the later one moves to the
+#' nearest unused line so the tests can still attribute each flag to one
+#' defect. With fewer lines than defects the leftovers share.
+#' @noRd
+.pick_lines <- function(lines, fracs) {
+  n <- length(lines)
+  idx <- pmin(n, pmax(1L, as.integer(round(fracs * n))))
+  used <- logical(n)
+  for (k in seq_along(idx)) {
+    if (!used[idx[k]]) { used[idx[k]] <- TRUE; next }
+    free <- which(!used)
+    if (!length(free)) next
+    idx[k] <- free[which.min(abs(free - idx[k]))]
+    used[idx[k]] <- TRUE
+  }
+  stats::setNames(lines[idx], names(fracs))
 }
 
 #' Smooth, zero-mean Gaussian noise

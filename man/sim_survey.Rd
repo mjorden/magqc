@@ -19,7 +19,7 @@ sim_survey(
 )
 }
 \arguments{
-\item{n_lines}{Number of traverse lines.}
+\item{n_lines}{Number of traverse lines (at least 2).}
 
 \item{line_spacing}{Traverse spacing, m.}
 
@@ -70,6 +70,14 @@ Injected defects (all on traverse lines unless stated):
 \item a magnetic-storm excursion on the base station (diurnal)
 \item a +2.5 nT bias on southbound lines (heading error, via crossovers)
 }
+
+Defect targets are chosen from the generated geometry (a traverse by its
+position in the block, a window by fraction of the line or by duration),
+so any \code{n_lines >= 2} and any line length work; a defect that cannot be
+placed on a very short line is skipped with a warning and gets no \code{truth}
+row. With the default arguments the targets are L1050 (noise), L1090
+(off-plan), L1110 (mispositioned), L1030 (clearance), L1070 (dropout) and
+L1010 (sparse).
 }
 \examples{
 sim <- sim_survey(seed = 1)

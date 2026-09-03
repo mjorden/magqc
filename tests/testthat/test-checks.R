@@ -100,6 +100,37 @@ test_that("scorecard and stats are consistent with the flags", {
   expect_output(print(res), "checks passed")
 })
 
+test_that("degenerate base-station timestamps do not abort the run (#2, #13)", {
+  # every timestamp tripled: median interval is exactly 0
+  b <- sim$base
+  dup <- b[rep(seq_len(nrow(b)), each = 3), ]
+  expect_no_warning(r <- run_qc(sim$data, spec = sim$spec, base = dup))
+  sc <- r$scorecard[r$scorecard$check == "diurnal", ]
+  expect_equal(sc$status, "n/a")
+  expect_match(sc$note, "degenerate")
+  expect_equal(nrow(r$flags[r$flags$check == "diurnal", ]), 0)
+
+  # a stuck clock for longer than the chord window: no -Inf, no warning
+  frozen <- b
+  k <- 500:640
+  frozen$time[k] <- frozen$time[k[1]]
+  expect_no_warning(r2 <- run_qc(sim$data, spec = sim$spec, base = frozen))
+  expect_false(any(is.infinite(r2$diurnal$chord_dev)))
+  expect_true(any(is.finite(r2$diurnal$chord_dev)))
+  expect_true(any(is.na(r2$diurnal$chord_dev[k[1]:(k[1] + 5)])))
+  expect_gt(nrow(r2$flags[r2$flags$check == "diurnal", ]), 0)   # the storm is still found
+})
+
+test_that("a zero-length flight-plan segment falls back to the best-fit line loudly (#5)", {
+  plan <- data.frame(line = c("L1090", "L1000"), x0 = c(1800, 0), y0 = c(0, 0), x1 = c(1800, 0), y1 = c(0, 7000))
+  expect_warning(f <- check_line_deviation(res$survey, res$spec, plan = plan), "L1090.*zero-length")
+  expect_true("L1090" %in% f$line)                     # the excursion is still flagged
+  expect_gt(max(f$value[f$line == "L1090"]), 25)
+  expect_match(attr(f, "metric")$note, "L1090")
+  expect_false("L1000" %in% f$line)                   # the valid plan row still works
+  expect_true(all(is.finite(f$value)))
+})
+
 test_that("checks accept a custom spec and a flight plan", {
   # with despiking disabled the 5-40 nT spikes reach the fourth difference, so
   # its limit has to clear 6 * 40 / 16 = 15 nT too

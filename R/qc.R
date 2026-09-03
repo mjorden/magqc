@@ -52,7 +52,9 @@ run_qc <- function(survey, spec = survey_spec(), base = NULL, plan = NULL,
   if (!is.null(base)) {
     base <- base[order(base$time), ]
     datum <- stats::median(base$mag_base, na.rm = TRUE)
-    corr <- stats::approx(as.numeric(base$time), base$mag_base, xout = as.numeric(survey$time), rule = 2)$y
+    # ties = mean: duplicate base timestamps are averaged rather than warned about (#2)
+    corr <- stats::approx(as.numeric(base$time), base$mag_base, xout = as.numeric(survey$time),
+                          rule = 2, ties = mean)$y
     survey$mag <- survey$mag_raw - (corr - datum)
   }
 

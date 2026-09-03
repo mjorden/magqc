@@ -182,7 +182,7 @@ check_along_line_spacing <- function(survey, spec) {
 #' @rdname checks
 #' @export
 check_line_deviation <- function(survey, spec, plan = NULL) {
-  out <- list(); all_off <- numeric(0)
+  out <- list(); all_off <- numeric(0); bad_plan <- character(0)
   for (idx in .by_line(survey)) {
     if (length(idx) < 3) next
     ln <- survey$line[idx[1]]
@@ -190,7 +190,20 @@ check_line_deviation <- function(survey, spec, plan = NULL) {
     planned <- !is.null(plan) && ln %in% plan$line
     if (planned) {
       p <- plan[plan$line == ln, ][1, ]
-      dvec <- c(p$x1 - p$x0, p$y1 - p$y0); dvec <- dvec / sqrt(sum(dvec^2))
+      dvec <- c(p$x1 - p$x0, p$y1 - p$y0)
+      len <- sqrt(sum(dvec^2))
+      # A zero-length (or NA) plan segment would make every offset NaN and
+      # the line would silently pass; fall back to the best-fit line and say
+      # so loudly (#5)
+      if (!is.finite(len) || len <= 0) {
+        warning("flight plan row for line ", ln, " is a zero-length segment; ",
+                "measuring departure against the best-fit line instead", call. = FALSE)
+        bad_plan <- c(bad_plan, ln)
+        planned <- FALSE
+      }
+    }
+    if (planned) {
+      dvec <- dvec / len
       nrm <- c(-dvec[2], dvec[1])
       off <- (x - p$x0) * nrm[1] + (y - p$y0) * nrm[2]
     } else {
@@ -207,8 +220,10 @@ check_line_deviation <- function(survey, spec, plan = NULL) {
                             if (planned) "planned" else "best-fit"))
   }
   p95 <- if (length(all_off)) unname(stats::quantile(all_off, 0.95)) else NA_real_
-  .with_metric(.bind_flags(out), "95th pct departure (m)", p95, spec$max_deviation,
-               note = if (is.null(plan)) "measured against a best-fit line; no flight plan supplied")
+  note <- if (is.null(plan)) "measured against a best-fit line; no flight plan supplied" else
+    if (length(bad_plan)) sprintf("zero-length plan segment for %s; best-fit line used there",
+                                  paste(bad_plan, collapse = ", "))
+  .with_metric(.bind_flags(out), "95th pct departure (m)", p95, spec$max_deviation, note = note)
 }
 
 # ---- line separation ----------------------------------------------------------
@@ -337,20 +352,29 @@ check_diurnal <- function(base, spec, survey = NULL) {
   stopifnot(all(c("time", "mag_base") %in% names(base)))
   base <- base[order(base$time), ]
   t <- as.numeric(base$time); b <- base$mag_base; n <- length(b)
-  empty <- .with_metric(.flag_cols(), "max chord departure (nT)", NA_real_,
-                        spec$max_diurnal_dev, note = "base-station record too short")
-  if (n < 3) return(empty)
+  empty <- function(note) .with_metric(.flag_cols(), "max chord departure (nT)", NA_real_,
+                                       spec$max_diurnal_dev, note = note)
+  if (n < 3) return(empty("base-station record too short"))
   rate <- stats::median(diff(t))
+  # A logger that double-writes records, or resampled base data with repeated
+  # times, can make the median interval exactly 0; dividing by it would turn
+  # `w` into NA and abort the whole run (#2)
+  if (!is.finite(rate) || rate <= 0) {
+    return(empty("base-station timestamps are degenerate (median sampling interval is 0)"))
+  }
   w <- max(2L, as.integer(round(spec$diurnal_window / rate)))
-  if (n <= w) return(empty)
+  if (n <= w) return(empty("base-station record shorter than the diurnal window"))
 
   dev <- rep(NA_real_, n)
   for (i in seq_len(n - w)) {
     j <- i + w
     if (!is.finite(b[i]) || !is.finite(b[j])) next
+    # a stuck clock gives a zero-span window; there is no chord to test (#13)
+    if (t[j] <= t[i]) next
     frac <- (t[i:j] - t[i]) / (t[j] - t[i])
     chord <- b[i] + frac * (b[j] - b[i])
-    dev[i] <- max(abs(b[i:j] - chord), na.rm = TRUE)
+    d <- abs(b[i:j] - chord)
+    if (any(is.finite(d))) dev[i] <- max(d, na.rm = TRUE)
   }
   exceed <- which(is.finite(dev) & dev > spec$max_diurnal_dev)
   affected <- logical(n)

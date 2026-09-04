@@ -104,6 +104,17 @@ m <- magqc::qc_map(res)
 if (inherits(m, "plotly")) magqc:::.slim(m) else m
 ```
 
+```{r grid-hdr, results="asis"}
+if (!is.null(res$grid)) cat(sprintf("### Gridded field\n\n%s gridded by %s at %g m cells (a quarter of the traverse spacing), blanked beyond %g m from the flight lines; colours are histogram-equalised. RMS difference between samples and the grid at the sample: %.2f nT. The same grid is the \"Gridded field\" layer on the map above.\n",
+  if (res$grid$channel == "mag_lev") "Levelled field" else "Field",
+  if (res$grid$method == "mincurv") "minimum curvature" else "inverse distance",
+  res$grid$cell, res$grid$blank_distance, res$grid$rms_fit))
+```
+
+```{r grid, fig.width=10, fig.height=8.5}
+if (!is.null(res$grid)) magqc:::.slim(magqc::plot_grid(res))
+```
+
 ## Flagged intervals
 
 ```{r flags}

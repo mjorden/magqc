@@ -46,8 +46,6 @@ flags - that is the test suite (`tests/testthat/test-checks.R`).
 
 ![Acceptance report: verdict tiles and the per-check scorecard](man/figures/report-overview.png)
 
-![Flight lines with every flagged interval, one toggleable layer per check](man/figures/report-map.png)
-
 ## What it checks
 
 The specification is a plain list of thresholds from `survey_spec()`. The
@@ -117,6 +115,35 @@ field is added as `mag_lev`. The scorecard reports the crossover RMS
 it; a crossing that survives the correction is flagged, because heading
 error, lag or a bad tie do not level out. The noise checks and the
 heading-error check keep operating on the unlevelled field.
+
+## Gridded field
+
+```r
+res$grid
+#> <magqc grid>
+#>   mag_lev: 59 x 143 nodes at 50 m (mincurv), 0 of 8437 blanked
+#>   17569 samples; RMS fit 1.19 nT; range 53987.9 to 54318.4 nT
+g <- grid_field(res, cell = 25, method = "idw")   # or grid any channel yourself
+plot_grid(res)
+```
+
+`run_qc()` grids the levelled field by **minimum curvature** (Briggs 1974)
+at a quarter of the traverse spacing: samples are binned to the nearest
+node as a local plane evaluated at the node (a plain mean sits at the
+sample centroid, half a cell off at line ends), free nodes satisfy the
+13-point discrete biharmonic equation with free edges, and up to 40,000
+nodes the constrained system is solved exactly as a sparse linear system;
+larger grids relax from a coarse-to-fine start. Samples flagged as spikes
+are left out (a known point defect is not field), and nodes farther than
+half a line spacing from any sample are blanked. The grid is the "Gridded field" layer
+on the map (an image overlay in its own pane under the flight lines, with a
+histogram-equalised Spectral scale and legend), a heatmap in the projected
+fallback, and its own panel in the report and viewer. It is also the
+surface that reduction to the pole will operate on.
+
+![The gridded levelled field over the flight lines, one layer of the map](man/figures/report-map.png)
+
+![The same grid as the report's gridded-field panel, in the survey's local frame](man/figures/report-grid.png)
 
 ## Interactive viewer
 
@@ -230,8 +257,8 @@ report render.
 - statistical levelling and micro-levelling (tie-line levelling is in)
 - IGRF removal and lag correction (the field is handled as total field; no
   residual/anomaly channel yet)
-- gridding of the levelled field, a gridded-field layer on the map, and
-  reduction to the pole (needs the grid and IGRF inclination/declination)
+- reduction to the pole (the grid is in; needs IGRF inclination and
+  declination) and other grid filters (upward continuation, derivatives)
 - reading a flight plan from KML / Geosoft PLT
 - gradiometer and multi-sensor configurations
 

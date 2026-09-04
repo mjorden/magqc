@@ -102,7 +102,8 @@ ui <- page_sidebar(
         card(card_header("Fourth-difference noise"), plotly::plotlyOutput("d4", height = "320px")),
         card(card_header("Terrain clearance"), plotly::plotlyOutput("clearance", height = "320px")),
         card(card_header("Base station"), plotly::plotlyOutput("diurnal", height = "320px")),
-        card(card_header("Crossover misfit"), plotly::plotlyOutput("crossovers", height = "320px")))),
+        card(card_header("Crossover misfit"), plotly::plotlyOutput("crossovers", height = "320px")),
+        card(card_header("Gridded field"), plotly::plotlyOutput("grid", height = "640px"), full_screen = TRUE))),
     nav_panel("Lines", DT::DTOutput("lines")))
 )
 
@@ -225,6 +226,10 @@ server <- function(input, output, session) {
   output$crossovers <- plotly::renderPlotly({
     req(res()); p <- plot_crossovers(res())
     validate(need(!is.null(p), "No traverse/tie crossovers found.")); p
+  })
+  output$grid <- plotly::renderPlotly({
+    req(res()); p <- plot_grid(res())
+    validate(need(!is.null(p), "No grid (run_qc(grid = TRUE)).")); p
   })
 
   output$flags_csv <- downloadHandler(

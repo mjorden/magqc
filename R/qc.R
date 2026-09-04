@@ -29,18 +29,24 @@
 #'   and report the post-levelling residual on the scorecard? Skipped
 #'   silently when there are no crossovers.
 #' @param levelling_order Passed to [level_ties()] as `order`.
+#' @param grid Grid the (levelled) field with [grid_field()] for the map
+#'   layer and the gridded-field panel? Cell size is a quarter of the
+#'   traverse spacing, blanking distance half of it, and samples flagged as
+#'   spikes are left out.
 #' @return A list of class `magqc_result` with elements `survey` (with a
 #'   `mag_lev` column when levelling ran), `base`, `spec`, `flags`,
 #'   `scorecard`, `lines`, `stats`, `crossovers`, `diurnal` (base-station
 #'   statistics), `fourth_difference` (per-sample series), `heading` (misfit
-#'   by flight direction) and `levelling` (a `magqc_levelling`, or `NULL`).
+#'   by flight direction), `levelling` (a `magqc_levelling`, or `NULL`) and
+#'   `grid` (a `magqc_grid`, or `NULL`).
 #' @examples
 #' res <- run_qc(sim_survey(seed = 3))
 #' res$scorecard
 #' res$levelling
 #' @export
 run_qc <- function(survey, spec = survey_spec(), base = NULL, plan = NULL,
-                   levelling = TRUE, levelling_order = c("linear", "constant")) {
+                   levelling = TRUE, levelling_order = c("linear", "constant"),
+                   grid = TRUE) {
   if (inherits(survey, "magqc_sim")) {
     if (missing(spec)) spec <- survey$spec
     base <- base %||% survey$base
@@ -80,6 +86,15 @@ run_qc <- function(survey, spec = survey_spec(), base = NULL, plan = NULL,
     crossovers         = check_crossovers(xo, survey, spec),
     heading_error      = check_heading_error(xo, survey, spec),
     levelling_residual = check_levelling_residual(lev, survey, spec))
+
+  # the grid comes after the checks so the flagged spikes can be left out
+  grd <- NULL
+  if (isTRUE(grid)) {
+    grd <- .grid_survey(survey, channel = if (is.null(lev)) "mag" else "mag_lev",
+                        cell = spec$line_spacing / 4, method = "mincurv",
+                        blank_distance = spec$line_spacing / 2, max_iter = 2000L, tol = 0.01,
+                        exclude = checks$spikes$i_start)
+  }
 
   flags <- .bind_flags(unname(checks))
   reg <- .check_registry()
@@ -156,7 +171,8 @@ run_qc <- function(survey, spec = survey_spec(), base = NULL, plan = NULL,
     diurnal = attr(checks$diurnal, "base_stats"),
     fourth_difference = attr(checks$fourth_difference, "series"),
     heading = attr(checks$heading_error, "by_heading"),
-    levelling = lev),
+    levelling = lev,
+    grid = grd),
     class = "magqc_result")
 }
 

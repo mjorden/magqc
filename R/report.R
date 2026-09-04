@@ -80,8 +80,8 @@ qc_map <- function(result, decimate = 5) {
   s <- result$survey
   flags <- result$flags
   reg <- .check_registry()
-  if (isTRUE(result$stats$has_lonlat)) .leaflet_map(s, flags, reg, decimate) else
-    .plotly_map(s, flags, reg, decimate)
+  if (isTRUE(result$stats$has_lonlat)) .leaflet_map(s, flags, reg, decimate, result$grid) else
+    .plotly_map(s, flags, reg, decimate, result$grid)
 }
 
 .popup <- function(f) {
@@ -95,12 +95,38 @@ qc_map <- function(result, decimate = 5) {
                  ifelse(f$fid_end == f$fid_start, "", paste0("-", f$fid_end)))))
 }
 
-.leaflet_map <- function(s, flags, reg, decimate) {
+.leaflet_map <- function(s, flags, reg, decimate, grid = NULL) {
   m <- leaflet::leaflet(options = leaflet::leafletOptions(preferCanvas = TRUE))
   # OpenStreetMap needs no key; Carto's light basemap now watermarks without one.
   m <- leaflet::addProviderTiles(m, "OpenStreetMap.Mapnik", group = "OpenStreetMap")
   m <- leaflet::addProviderTiles(m, "Esri.WorldImagery", group = "Esri imagery")
   groups <- c("Traverse lines", "Tie lines")
+  if (!is.null(grid) && !is.null(grid$bounds)) {
+    # The grid goes in as an image overlay (no raster package needed) in its
+    # own pane between the tiles and the lines, registered with leaflet's
+    # layer manager under a group so the layers control can toggle it. Over a
+    # survey block the Mercator stretch across the image is negligible.
+    img <- .grid_png(grid)
+    grp <- "Gridded field"
+    groups <- c(grp, groups)
+    m <- htmlwidgets::onRender(m, "
+      function(el, x, data) {
+        var map = this;
+        if (!map.getPane('magqcGrid')) {
+          map.createPane('magqcGrid');
+          map.getPane('magqcGrid').style.zIndex = 250;
+        }
+        var img = L.imageOverlay(data.url, [[data.south, data.west], [data.north, data.east]],
+                                 {opacity: data.opacity, pane: 'magqcGrid', interactive: false});
+        map.layerManager.addLayer(img, 'image', 'magqc-grid', data.group);
+      }",
+      data = list(url = paste0("data:image/png;base64,", img$base64), group = grp, opacity = 0.75,
+                  south = grid$bounds$south, west = grid$bounds$west,
+                  north = grid$bounds$north, east = grid$bounds$east))
+    m <- leaflet::addLegend(m, position = "topleft", colors = img$legend_colors,
+                            labels = img$legend_labels, opacity = 0.9, group = grp,
+                            title = sprintf("%s (nT)", if (grid$channel == "mag_lev") "levelled field" else grid$channel))
+  }
   for (ln in split(s, s$line)) {
     d <- ln[seq(1, nrow(ln), by = decimate), ]
     if (nrow(ln) > 1 && !(nrow(ln) %in% seq(1, nrow(ln), by = decimate))) d <- rbind(d, ln[nrow(ln), ])
@@ -150,10 +176,22 @@ qc_map <- function(result, decimate = 5) {
                      max(s$lon[ok]) + pad_lon, max(s$lat[ok]) + pad_lat)
 }
 
-.plotly_map <- function(s, flags, reg, decimate) {
+.plotly_map <- function(s, flags, reg, decimate, grid = NULL) {
   d <- s[seq(1, nrow(s), by = decimate), ]
   d <- .gap_between_lines(d)
   p <- plotly::plot_ly()
+  if (!is.null(grid)) {
+    sc <- .grid_scale(grid$z, "equalize")
+    zi <- matrix((sc$index(grid$z) - 1) / (length(sc$pal) - 1), nrow(grid$z), ncol(grid$z))
+    q <- stats::quantile(grid$z[is.finite(grid$z)], seq(0, 1, by = 0.2), names = FALSE)
+    p <- plotly::add_trace(p, x = grid$x, y = grid$y, z = t(zi), customdata = t(round(grid$z, 1)),
+                           type = "heatmap", colorscale = .grid_colorscale(), zmin = 0, zmax = 1,
+                           opacity = 0.75, hoverongaps = FALSE, name = "Gridded field",
+                           hovertemplate = I("%{customdata:.1f} nT<extra></extra>"),
+                           colorbar = list(title = list(text = "nT"), tickvals = seq(0, 1, by = 0.2),
+                                           ticktext = formatC(q, format = "f", digits = 0, big.mark = ","),
+                                           thickness = 12, len = 0.6, y = 0.3))
+  }
   for (typ in c("traverse", "tie")) {
     dd <- d[d$line_type == typ | is.na(d$line_type), ]
     p <- plotly::add_trace(p, data = dd, x = ~x, y = ~y, type = "scatter", mode = "lines",
@@ -258,11 +296,22 @@ NULL
 #' `partial_bundle()` downloads that bundle at render time, so an offline
 #' render falls back to the full library silently. Set
 #' `options(magqc.partial_bundle = FALSE)` to skip the download attempt (the
-#' `attrs` stripping still applies).
+#' stripping still applies). One bundle serves the whole page:
+#' `"cartesian"` (1.25 MB) covers scatter and the grid heatmap, whereas
+#' choosing per widget would embed two bundles;
+#' `options(magqc.plotly_bundle = "basic")` picks the 1 MB one for a report
+#' without a grid.
 #' @noRd
 .slim <- function(p) {
   if (is.null(p)) return(p)
   p <- plotly::plotly_build(p)
+  if (isTRUE(getOption("magqc.partial_bundle", TRUE))) {
+    # partial_bundle() rebuilds the widget, so it goes first and the
+    # stripping below last
+    p <- tryCatch(suppressWarnings(plotly::partial_bundle(
+      p, type = getOption("magqc.plotly_bundle", "cartesian"), local = TRUE, minified = TRUE)),
+      error = function(e) p)
+  }
   p$x$attrs <- NULL
   p$x$visdat <- NULL
   # plotly recycles a scalar hovertemplate to one copy per point (I() does not
@@ -271,9 +320,19 @@ NULL
     ht <- p$x$data[[i]]$hovertemplate
     if (length(ht) > 1 && length(unique(ht)) == 1) p$x$data[[i]]$hovertemplate <- ht[[1]]
   }
-  if (!isTRUE(getOption("magqc.partial_bundle", TRUE))) return(p)
-  tryCatch(suppressWarnings(plotly::partial_bundle(p, type = "basic", local = TRUE, minified = TRUE)),
-           error = function(e) p)
+  # character x values on a date axis: plotly's build still attaches a
+  # categoryarray of every unique timestamp (hundreds of kB) that a date
+  # axis never reads
+  for (ax in grep("^xaxis", names(p$x$layout), value = TRUE)) {
+    if (identical(p$x$layout[[ax]]$type, "date")) {
+      p$x$layout[[ax]]$categoryarray <- NULL
+      p$x$layout[[ax]]$categoryorder <- NULL
+    }
+  }
+  # the widget is fully built; plotly's render-time hook would build it
+  # again and put the categoryarray back
+  p$preRenderHook <- NULL
+  p
 }
 
 #' @rdname diagnostics

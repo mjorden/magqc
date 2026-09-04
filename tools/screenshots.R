@@ -37,7 +37,8 @@ save(magick::image_read(tmp), "report-overview.png")
 h <- as.integer(js("document.documentElement.scrollHeight")) + 50L
 b$Emulation$setDeviceMetricsOverride(width = 1280L, height = h, deviceScaleFactor = 1, mobile = FALSE)
 Sys.sleep(8)
-js("var p = document.querySelectorAll('.js-plotly-plot'); p[0].id = 'shot-d4'; p[3].id = 'shot-xo'")
+# plotly widgets on the page, in order: gridded field, fourth difference, clearance, base station, crossovers
+js("var p = document.querySelectorAll('.js-plotly-plot'); p[0].id = 'shot-grid'; p[1].id = 'shot-d4'; p[4].id = 'shot-xo'")
 b$screenshot(tmp, selector = "html", scale = scale, show = FALSE)
 full <- magick::image_read(tmp)
 crop <- function(sel, file, pad = 8) {
@@ -47,6 +48,7 @@ crop <- function(sel, file, pad = 8) {
   save(magick::image_crop(full, g), file)
 }
 crop(".leaflet-container", "report-map.png")
+crop("#shot-grid", "report-grid.png")
 crop("#shot-xo", "report-crossovers.png")
 crop("#shot-d4", "report-fourth-difference.png")
 

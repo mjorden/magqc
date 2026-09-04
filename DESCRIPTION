@@ -28,7 +28,12 @@ Imports:
     htmltools,
     DT,
     rmarkdown,
-    knitr
+    knitr,
+    grDevices,
+    png,
+    base64enc,
+    htmlwidgets,
+    Matrix
 Suggests:
     testthat (>= 3.0.0),
     withr,

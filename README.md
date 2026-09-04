@@ -44,6 +44,10 @@ Every defect the simulator injects is caught by the check designed for it,
 on the line it was injected on, and a defect-free survey produces zero
 flags - that is the test suite (`tests/testthat/test-checks.R`).
 
+![Acceptance report: verdict tiles and the per-check scorecard](man/figures/report-overview.png)
+
+![Flight lines with every flagged interval, one toggleable layer per check](man/figures/report-map.png)
+
 ## What it checks
 
 The specification is a plain list of thresholds from `survey_spec()`. The
@@ -90,6 +94,8 @@ plotly's ~1 MB "basic" bundle is fetched at render time in place of the
 full 3.7 MB library; offline, the full library is embedded and the file is
 ~6.5 MB. Set `options(magqc.partial_bundle = FALSE)` to skip the fetch.
 
+![Fourth-difference noise envelope over the flight, the injected noisy segment standing out](man/figures/report-fourth-difference.png)
+
 ## Tie-line levelling
 
 ```r
@@ -100,6 +106,8 @@ res$levelling
 lev <- level_ties(res, order = "constant")   # or run it standalone on a survey
 lev$coefficients                              # line, order, n_crossovers, c0 (nT), c1 (nT/m)
 ```
+
+![Crossover misfit before (filled) and after (open) levelling; the southbound heading bias is the whole story](man/figures/report-crossovers.png)
 
 `run_qc()` levels by default when tie lines exist: each traverse gets a
 least-squares offset (plus a drift term in distance along the line when it
@@ -116,6 +124,8 @@ heading-error check keep operating on the unlevelled field.
 run_viewer()                       # simulated survey, editable spec
 run_viewer(res)                    # open an existing result
 ```
+
+![The viewer: click a flight line on the map to open its profile - field, fourth difference and clearance, with the flagged noisy segment shaded](man/figures/viewer.png)
 
 A Shiny app (bslib) with the same engine behind it: load the simulated
 survey or upload an XYZ file plus base-station CSV, edit every threshold in
@@ -218,7 +228,10 @@ report render.
 ## Not yet
 
 - statistical levelling and micro-levelling (tie-line levelling is in)
-- IGRF removal and lag correction
+- IGRF removal and lag correction (the field is handled as total field; no
+  residual/anomaly channel yet)
+- gridding of the levelled field, a gridded-field layer on the map, and
+  reduction to the pole (needs the grid and IGRF inclination/declination)
 - reading a flight plan from KML / Geosoft PLT
 - gradiometer and multi-sensor configurations
 

@@ -220,19 +220,30 @@ NULL
 #' series; flagged samples are drawn separately at full resolution.
 #' @noRd
 .add_line_traces <- function(p, s, y, digits, hover_units, decimate = 1L, legend_name) {
+  # The legend shows one entry for the series (plotly hides entries for empty
+  # traces, so no stub): the first line's trace is named for the series and
+  # carries its line name per point for the hover; every other trace is named
+  # for its line, hidden from the legend, and hovers via %{fullData.name}.
   first <- TRUE
   for (idx in .by_line(s)) {
     if (decimate > 1L) {
       keep <- unique(c(seq(1L, length(idx), by = decimate), length(idx)))
       idx <- idx[keep]
     }
-    p <- plotly::add_trace(
-      p, x = .time_str(s$time[idx]), y = round(y[idx], digits), type = "scatter", mode = "lines",
-      line = list(color = .pal$traverse, width = 1), name = s$line[idx[1]],
-      legendgroup = legend_name, showlegend = first,
-      # I(): otherwise plotly recycles the template once per point (#15)
-      hovertemplate = I(paste0("%{fullData.name}: %{y:.", digits, "f} ", hover_units, "<extra></extra>")))
-    first <- FALSE
+    if (first) {
+      p <- plotly::add_trace(
+        p, x = .time_str(s$time[idx]), y = round(y[idx], digits), type = "scatter", mode = "lines",
+        line = list(color = .pal$traverse, width = 1), name = legend_name,
+        legendgroup = legend_name, showlegend = TRUE, text = s$line[idx],
+        hovertemplate = I(paste0("%{text}: %{y:.", digits, "f} ", hover_units, "<extra></extra>")))
+      first <- FALSE
+    } else {
+      p <- plotly::add_trace(
+        p, x = .time_str(s$time[idx]), y = round(y[idx], digits), type = "scatter", mode = "lines",
+        line = list(color = .pal$traverse, width = 1), name = s$line[idx[1]],
+        legendgroup = legend_name, showlegend = FALSE,
+        hovertemplate = I(paste0("%{fullData.name}: %{y:.", digits, "f} ", hover_units, "<extra></extra>")))
+    }
   }
   p
 }

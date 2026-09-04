@@ -32,9 +32,13 @@ test_that("qc_report renders a self-contained HTML file", {
 test_that("diagnostic traces are one per line without per-point labels (#15)", {
   res <- run_qc(sim_survey(seed = 5))
   b <- plotly::plotly_build(plot_fourth_difference(res))$x$data
-  lines <- vapply(b, function(t) t$mode == "lines", logical(1))
+  lines <- vapply(b, function(t) t$mode == "lines" && length(t$y) > 0, logical(1))
   expect_equal(sum(lines), nrow(res$lines))
-  expect_true(all(vapply(b[lines], function(t) is.null(t$text) && t$type == "scatter", logical(1))))
+  # exactly one legend entry for the series, named for the series, not a line
+  shown <- Filter(function(t) isTRUE(t$showlegend) && t$mode == "lines", b)
+  expect_equal(vapply(shown, function(t) t$name, character(1)), "fourth difference")
+  expect_true(all(vapply(b[lines], function(t) t$type == "scatter", logical(1))))
+  expect_equal(sum(vapply(b[lines], function(t) !is.null(t$text), logical(1))), 1)   # only the legend trace
   # no NA gap rows: the traces hold about one point per finite sample
   # (plotly_build drops most of the NA fourth differences at segment ends;
   # a synthetic gap row per line would add nrow(res$lines) points)

@@ -14,6 +14,8 @@ sim_survey(
   nominal_clearance = 60,
   origin = c(lon = -108.5, lat = 43.2),
   start_time = as.POSIXct("2024-06-14 08:00:00", tz = "UTC"),
+  inclination = 68,
+  declination = 10,
   defects = TRUE,
   seed = 42
 )
@@ -36,6 +38,11 @@ sim_survey(
 \item{origin}{\code{c(lon, lat)} of the local grid origin.}
 
 \item{start_time}{POSIXct start of the flight.}
+
+\item{inclination, declination}{Ambient field direction the anomalies are
+induced in, degrees. The defaults match the IGRF at the default origin
+(central Wyoming, 2024), so the anomalies are asymmetric the way real
+ones are at that latitude and \code{\link[=reduce_to_pole]{reduce_to_pole()}} straightens them.}
 
 \item{defects}{Inject defects?}
 

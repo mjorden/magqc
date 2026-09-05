@@ -36,6 +36,10 @@
 #' @param nominal_clearance Terrain clearance, m.
 #' @param origin `c(lon, lat)` of the local grid origin.
 #' @param start_time POSIXct start of the flight.
+#' @param inclination,declination Ambient field direction the anomalies are
+#'   induced in, degrees. The defaults match the IGRF at the default origin
+#'   (central Wyoming, 2024), so the anomalies are asymmetric the way real
+#'   ones are at that latitude and [reduce_to_pole()] straightens them.
 #' @param defects Inject defects?
 #' @param seed Random seed.
 #'
@@ -54,6 +58,7 @@ sim_survey <- function(n_lines = 14, line_spacing = 200, line_length = 7000,
                        nominal_clearance = 60,
                        origin = c(lon = -108.5, lat = 43.2),
                        start_time = as.POSIXct("2024-06-14 08:00:00", tz = "UTC"),
+                       inclination = 68, declination = 10,
                        defects = TRUE, seed = 42) {
   if (!is.numeric(n_lines) || n_lines < 2) stop("`n_lines` must be at least 2.", call. = FALSE)
   if (line_length <= 0 || tie_spacing <= 0 || line_spacing <= 0 || sample_rate <= 0 || ground_speed <= 0) {
@@ -106,6 +111,10 @@ sim_survey <- function(n_lines = 14, line_spacing = 200, line_length = 7000,
   d$radar_alt <- nominal_clearance + .smooth_noise(nrow(d), sd = 3, span = 150)
 
   # ---- magnetic field -------------------------------------------------------
+  # Five buried dipoles magnetised along the ambient field (the total-field
+  # anomaly of each is the real inclined-field shape, not a symmetric bump),
+  # observed at the sensor height above ground. `amp` is the peak a vertical
+  # field would give (2 m / h^3).
   sources <- tibble::tibble(
     xs = c(600, 1500, 2100, 1000, 2400),
     ys = c(1500, 3800, 5600, 6200, 2600),
@@ -113,9 +122,9 @@ sim_survey <- function(n_lines = 14, line_spacing = 200, line_length = 7000,
     amp = c(180, 320, 90, 220, 140))
   anom <- rep(0, nrow(d))
   for (s in seq_len(nrow(sources))) {
-    r2 <- (d$x - sources$xs[s])^2 + (d$y - sources$ys[s])^2
-    dd <- sources$depth[s]
-    anom <- anom + sources$amp[s] * dd^3 * (2 * dd^2 - r2) / (2 * (r2 + dd^2)^2.5)
+    h <- sources$depth[s] + nominal_clearance
+    anom <- anom + .dipole_anomaly(d$x, d$y, sources$xs[s], sources$ys[s], h,
+                                   inclination, declination, moment = sources$amp[s] * h^3 / 2)
   }
   regional <- 54000 + 0.0025 * d$y + 0.0010 * d$x
   noise_sd <- rep(0.015, nrow(d))

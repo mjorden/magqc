@@ -30,11 +30,13 @@ test_that("flagged spikes are left out of the grid", {
   expect_equal(rd$grid$n_excluded, 25)
   v <- rd$survey[[rd$grid$channel]]
   expect_equal(rd$grid$n_data, sum(is.finite(v)) - 25)
-  # the grid at a spike location is the smooth field, not the spike
+  # the grid at a spike location follows the neighbouring samples, not the spike
   sp <- rd$flags[rd$flags$check == "spikes", ][1, ]
   g <- rd$grid
   at <- magqc:::.bilinear_at(g$z, (sp$x - g$x[1]) / g$cell + 1, (sp$y - g$y[1]) / g$cell + 1)
-  expect_lt(abs(at - v[sp$i_start]), abs(sp$value))
+  neighbours <- stats::median(v[sp$i_start + c(-6:-3, 3:6)], na.rm = TRUE)
+  expect_lt(abs(at - neighbours), 0.25 * abs(sp$value))
+  expect_gt(abs(at - v[sp$i_start]), 0.5 * abs(sp$value))
   with_spikes <- grid_field(rd, exclude = integer(0))
   expect_equal(with_spikes$n_excluded, 0)
   expect_output(print(rd$grid), "25 flagged spikes excluded")

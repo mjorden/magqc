@@ -105,9 +105,10 @@ reduce_to_pole <- function(grid, inclination, declination, amp_inclination = 20,
 
 #' Total-field anomaly of a point dipole with induced magnetisation
 #'
-#' For tests and examples: the anomaly at points `(x, y)` on the plane
-#' `z = 0` of a dipole at `(x0, y0)` and depth `h`, magnetised along the
-#' field direction `(inclination, declination)`, in arbitrary units.
+#' The anomaly at points `(x, y)` on the plane `z = 0` of a dipole at
+#' `(x0, y0)` and depth `h`, magnetised along the field direction
+#' `(inclination, declination)`; `moment` scales it (a vertical field gives
+#' a peak of `2 moment / h^3`). Used by the simulator and the RTP tests.
 #' @noRd
 .dipole_anomaly <- function(x, y, x0, y0, h, inclination, declination, moment = 1e9) {
   I <- .deg2rad(inclination); D <- .deg2rad(declination)

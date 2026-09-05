@@ -167,8 +167,9 @@ test_that("plots: series colours never recycle and the crossover RMS is the scor
 
 test_that("checks accept a custom spec and a flight plan", {
   # with despiking disabled the 5-40 nT spikes reach the fourth difference, so
-  # its limit has to clear 6 * 40 / 16 = 15 nT too
-  loose <- survey_spec(max_deviation = 80, clearance_tol = 50, fourth_diff_tol = 20,
+  # its limit has to clear 6 * 40 / 16 = 15 nT - and more where two spikes
+  # land within a few samples of each other and stack
+  loose <- survey_spec(max_deviation = 80, clearance_tol = 50, fourth_diff_tol = 30,
                        max_heading_error = 5, line_spacing_tol = 0.5, max_gap = 30,
                        max_along_line_sep = 1000, spike_nsigma = 1e6, max_diurnal_dev = 100)
   r2 <- run_qc(sim, spec = loose)

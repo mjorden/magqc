@@ -20,22 +20,23 @@ remotes::install_github("mjorden/magqc")
 library(magqc)
 
 sim <- sim_survey()                 # 17 lines, 106 line-km, nine kinds of defect
-res <- run_qc(sim)                  # diurnal correction, crossovers, ten checks
+res <- run_qc(sim)                  # diurnal correction, eleven checks, levelling, IGRF, grid, RTP
 res
 #> <magqc result>
 #>   17,568 samples, 17 lines, 106.3 line-km, 0.9 h of flying
-#>   1 of 10 checks passed; 12.6 line-km flagged (88.2% accepted)
+#>   2 of 11 checks passed; 12.6 line-km flagged (88.2% accepted)
 #>
-#>   FAIL  Data gaps                longest gap (s) = 12.2           1 flag(s)
+#>   FAIL  Data gaps                longest gap (s) = 12.1           1 flag(s)
 #>   FAIL  Along-line sampling      max sample spacing (m) = 12      1 flag(s)
-#>   FAIL  Departure from line      95th pct departure (m) = 9.53    1 flag(s)
+#>   FAIL  Departure from line      95th pct departure (m) = 9.56    1 flag(s)
 #>   FAIL  Line separation          max separation error (%) = 30    2 flag(s)
 #>   FAIL  Terrain clearance        95th pct |clearance error| (m) = 5.95 1 flag(s)
 #>   FAIL  Spikes                   spike count = 25                 25 flag(s)
-#>   FAIL  Fourth-difference noise  max |4th difference| (nT) = 0.321 47 flag(s)
+#>   FAIL  Fourth-difference noise  max |4th difference| (nT) = 0.321 48 flag(s)
 #>   FAIL  Diurnal variation        max chord departure (nT) = 11.3  2 flag(s)
-#>   PASS  Crossover misfit         RMS crossover misfit (nT) = 1.69
-#>   FAIL  Heading error            heading error (nT) = 2.41        1 flag(s)
+#>   PASS  Crossover misfit         RMS crossover misfit (nT) = 1.87
+#>   FAIL  Heading error            heading error (nT) = 2.64        1 flag(s)
+#>   PASS  Post-levelling residual  RMS misfit after levelling (nT) = 0.268
 
 qc_report(res, "magqc-report.html", title = "Block A acceptance QA/QC")
 ```
@@ -100,12 +101,12 @@ full 3.7 MB library; offline, the full library is embedded and the file is
 res$levelling
 #> <magqc tie-line levelling>
 #>   linear corrections on 14 traverses (13 linear, 1 constant, 0 without crossovers)
-#>   crossover RMS: 1.69 nT before, 0.15 nT after (41 crossovers)
+#>   crossover RMS: 1.87 nT before, 0.27 nT after (41 crossovers)
 lev <- level_ties(res, order = "constant")   # or run it standalone on a survey
 lev$coefficients                              # line, order, n_crossovers, c0 (nT), c1 (nT/m)
 ```
 
-![Crossover misfit before (filled) and after (open) levelling; the southbound heading bias is the whole story](man/figures/report-crossovers.png)
+![Crossover misfit before (filled) and after (open) levelling; the southbound heading bias is most of the story](man/figures/report-crossovers.png)
 
 `run_qc()` levels by default when tie lines exist: each traverse gets a
 least-squares offset (plus a drift term in distance along the line when it
@@ -120,7 +121,7 @@ heading-error check keep operating on the unlevelled field.
 
 ```r
 res$igrf
-#> $model "igrf 1.0"  $epoch 2024.45  $altitude 60  $F 52642  $I 68.1  $D 9.8
+#> $model "igrf 1.0"  $epoch 2024.45  $altitude 1581  $F 52659  $I 68.2  $D 9.8
 igrf_field(-108.5, 43.2, as.POSIXct("2024-06-14", tz = "UTC"), altitude = 1600)
 ```
 
@@ -137,8 +138,8 @@ constant offset - the map shows the anomalies either way.
 ```r
 res$grid
 #> <magqc grid>
-#>   mag_lev: 59 x 143 nodes at 50 m (mincurv), 0 of 8437 blanked
-#>   17569 samples; RMS fit 1.19 nT; range 53987.9 to 54318.4 nT
+#>   mag_res: 57 x 141 nodes at 50 m (mincurv), 15 of 8037 blanked
+#>   17544 samples (25 flagged spikes excluded); RMS fit 0.69 nT; range 1338.1 to 1640.7 nT
 g <- grid_field(res, cell = 25, method = "idw")   # or grid any channel yourself
 plot_grid(res)
 ```
@@ -167,8 +168,8 @@ surface that reduction to the pole will operate on.
 ```r
 res$rtp
 #> <magqc grid, reduced to the pole>
-#>   57 x 141 nodes at 50 m; I 68.1 deg, D 9.8 deg (amplitude inclination 68 deg); ...
-r <- reduce_to_pole(res$grid, inclination = 68.1, declination = 9.8)
+#>   57 x 141 nodes at 50 m; I 68.2 deg, D 9.8 deg (amplitude inclination 68 deg); range 1356.0 to 1669.0 nT
+r <- reduce_to_pole(res$grid, inclination = 68.2, declination = 9.8)
 plot_grid(res, "rtp")
 ```
 
@@ -186,7 +187,7 @@ matches the same dipole computed in a vertical field (r > 0.995, RMS < 3 %
 of range) and peaks within a cell of the source. On the map it is the
 "Reduced to pole" layer, off by default so it does not cover the residual.
 
-![The residual (left) and the same grid reduced to the pole (right): anomalies move onto their sources and lose the northern low](man/figures/report-rtp.png)
+![The residual (left) and the same grid reduced to the pole (right): the anomalies of dipoles induced in a 68° field move onto their sources and lose their northern lows](man/figures/report-rtp.png)
 
 ## Interactive viewer
 
@@ -239,8 +240,10 @@ against the plan instead of a best-fit axis.
 ## The simulated survey
 
 `sim_survey()` flies a block of traverse and tie lines over a synthetic
-terrain and magnetic field (five buried sources, a regional gradient, a
-diurnal curve with a 1 Hz base-station record) and injects:
+terrain and magnetic field (five buried dipoles magnetised along the local
+field direction - I 68°, D 10° by default, so their anomalies have the real
+inclined-field asymmetry that reduction to the pole removes - a regional
+gradient, and a diurnal curve with a 1 Hz base-station record) and injects:
 
 | Defect | Where | Caught by |
 |---|---|---|

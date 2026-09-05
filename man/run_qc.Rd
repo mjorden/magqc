@@ -11,6 +11,7 @@ run_qc(
   plan = NULL,
   levelling = TRUE,
   levelling_order = c("linear", "constant"),
+  igrf = TRUE,
   grid = TRUE
 )
 }
@@ -33,18 +34,24 @@ silently when there are no crossovers.}
 
 \item{levelling_order}{Passed to \code{\link[=level_ties]{level_ties()}} as \code{order}.}
 
-\item{grid}{Grid the (levelled) field with \code{\link[=grid_field]{grid_field()}} for the map
-layer and the gridded-field panel? Cell size is a quarter of the
-traverse spacing, blanking distance half of it, and samples flagged as
-spikes are left out.}
+\item{igrf}{Remove the IGRF main field (\code{\link[=igrf_field]{igrf_field()}})? Adds \code{mag_igrf}
+and \code{mag_res} (levelled field minus IGRF) to the survey; skipped
+silently without longitude/latitude.}
+
+\item{grid}{Grid the field with \code{\link[=grid_field]{grid_field()}} for the map layer and the
+gridded-field panel? Grids the residual when the IGRF was removed,
+otherwise the levelled field. Cell size is a quarter of the traverse
+spacing, blanking distance half of it, and samples flagged as spikes
+are left out.}
 }
 \value{
 A list of class \code{magqc_result} with elements \code{survey} (with a
 \code{mag_lev} column when levelling ran), \code{base}, \code{spec}, \code{flags},
 \code{scorecard}, \code{lines}, \code{stats}, \code{crossovers}, \code{diurnal} (base-station
 statistics), \code{fourth_difference} (per-sample series), \code{heading} (misfit
-by flight direction), \code{levelling} (a \code{magqc_levelling}, or \code{NULL}) and
-\code{grid} (a \code{magqc_grid}, or \code{NULL}).
+by flight direction), \code{levelling} (a \code{magqc_levelling}, or \code{NULL}),
+\code{igrf} (model, epoch, altitude and \code{F}/\code{I}/\code{D} at the block centre, or
+\code{NULL}) and \code{grid} (a \code{magqc_grid}, or \code{NULL}).
 }
 \description{
 Applies the diurnal correction (when a base-station record is supplied),

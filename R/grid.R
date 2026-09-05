@@ -15,8 +15,9 @@
 #'
 #' @param x A `magqc_result` (cell and blanking default from its spec) or a
 #'   `magqc_survey` (then `cell` is required).
-#' @param channel Field column to grid. Defaults to `mag_lev` when levelling
-#'   ran, otherwise `mag`.
+#' @param channel Field column to grid. Defaults to the residual `mag_res`
+#'   when the IGRF was removed, else `mag_lev` when levelling ran, else
+#'   `mag`.
 #' @param cell Grid cell size, m. Defaults to a quarter of the traverse
 #'   spacing, the usual choice for line data.
 #' @param method `"mincurv"` (default) or `"idw"`.
@@ -57,7 +58,8 @@ grid_field <- function(x, channel = NULL, cell = NULL, method = c("mincurv", "id
   } else {
     stop("`x` must be a magqc_survey or a magqc_result.", call. = FALSE)
   }
-  channel <- channel %||% if ("mag_lev" %in% names(survey)) "mag_lev" else "mag"
+  channel <- channel %||% if ("mag_res" %in% names(survey)) "mag_res" else
+    if ("mag_lev" %in% names(survey)) "mag_lev" else "mag"
   if (!channel %in% names(survey)) stop("Channel `", channel, "` is not in the survey.", call. = FALSE)
   .grid_survey(survey, channel, cell, method, blank_distance, max_iter, tol, exclude)
 }
@@ -424,6 +426,6 @@ plot_grid <- function(x) {
                  annotations = list(list(
                    xref = "paper", yref = "paper", x = 0, y = 1.02, xanchor = "left", yanchor = "bottom",
                    showarrow = FALSE, font = list(color = .pal$ink2, size = 12),
-                   text = sprintf("%s, %g m cells, %s; RMS fit %.2f nT", g$channel, g$cell,
+                   text = sprintf("%s, %g m cells, %s; RMS fit %.2f nT", .channel_label(g$channel), g$cell,
                                   if (g$method == "mincurv") "minimum curvature" else "inverse distance", g$rms_fit))))
 }

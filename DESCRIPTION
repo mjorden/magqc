@@ -33,7 +33,8 @@ Imports:
     png,
     base64enc,
     htmlwidgets,
-    Matrix
+    Matrix,
+    igrf
 Suggests:
     testthat (>= 3.0.0),
     withr,

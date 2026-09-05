@@ -106,7 +106,7 @@ if (inherits(m, "plotly")) magqc:::.slim(m) else m
 
 ```{r grid-hdr, results="asis"}
 if (!is.null(res$grid)) cat(sprintf("### Gridded field\n\n%s gridded by %s at %g m cells (a quarter of the traverse spacing), blanked beyond %g m from the flight lines; colours are histogram-equalised. RMS difference between samples and the grid at the sample: %.2f nT. The same grid is the \"Gridded field\" layer on the map above.\n",
-  if (res$grid$channel == "mag_lev") "Levelled field" else "Field",
+  tools::toTitleCase(magqc:::.channel_label(res$grid$channel)),
   if (res$grid$method == "mincurv") "minimum curvature" else "inverse distance",
   res$grid$cell, res$grid$blank_distance, res$grid$rms_fit))
 ```
@@ -196,6 +196,9 @@ rows <- list(
   c("Tie-line levelling", if (!is.null(res$levelling)) sprintf("%s corrections per traverse (%d linear, %d constant); crossover RMS %.2f → %.2f nT",
         res$levelling$order, sum(res$levelling$coefficients$order == "linear"), sum(res$levelling$coefficients$order == "constant"),
         res$levelling$rms[["before"]], res$levelling$rms[["after"]]) else "not run (no crossovers)"),
+  c("IGRF removal", if (!is.null(res$igrf)) sprintf("%s at epoch %.2f, %.0f m above the spheroid: F %s nT, I %.1f°, D %.1f°%s at the block centre; residual = %s − IGRF",
+        res$igrf$model, res$igrf$epoch, res$igrf$altitude, format(round(res$igrf$F), big.mark = ","), res$igrf$I,
+        abs(res$igrf$D), if (res$igrf$D >= 0) "E" else "W", magqc:::.channel_label(res$igrf$from)) else "not run (no longitude/latitude)"),
   c("Diurnal correction", if (isTRUE(st$diurnal_corrected)) "applied from base-station record" else "not applied (no base-station record)"))
 cat('<table class="sc"><tbody>')
 for (r in rows) cat(sprintf('<tr><td>%s</td><td>%s</td></tr>', r[1], r[2]))

@@ -1,10 +1,11 @@
 sim <- sim_survey(seed = 4, defects = FALSE)
 res <- run_qc(sim)
 
-test_that("run_qc grids the levelled field by default", {
+test_that("run_qc grids the residual field by default", {
   g <- res$grid
   expect_s3_class(g, "magqc_grid")
-  expect_equal(g$channel, "mag_lev")
+  expect_equal(g$channel, "mag_res")
+  expect_equal(run_qc(sim, igrf = FALSE)$grid$channel, "mag_lev")
   expect_equal(g$cell, res$spec$line_spacing / 4)
   expect_equal(dim(g$z), c(length(g$x), length(g$y)))
   expect_true(all(diff(g$x) == g$cell) && all(diff(g$y) == g$cell))
@@ -27,12 +28,13 @@ test_that("run_qc grids the levelled field by default", {
 test_that("flagged spikes are left out of the grid", {
   rd <- run_qc(sim_survey(seed = 42))
   expect_equal(rd$grid$n_excluded, 25)
-  expect_equal(rd$grid$n_data, sum(is.finite(rd$survey$mag_lev)) - 25)
+  v <- rd$survey[[rd$grid$channel]]
+  expect_equal(rd$grid$n_data, sum(is.finite(v)) - 25)
   # the grid at a spike location is the smooth field, not the spike
   sp <- rd$flags[rd$flags$check == "spikes", ][1, ]
   g <- rd$grid
   at <- magqc:::.bilinear_at(g$z, (sp$x - g$x[1]) / g$cell + 1, (sp$y - g$y[1]) / g$cell + 1)
-  expect_lt(abs(at - rd$survey$mag_lev[sp$i_start]), abs(sp$value))
+  expect_lt(abs(at - v[sp$i_start]), abs(sp$value))
   with_spikes <- grid_field(rd, exclude = integer(0))
   expect_equal(with_spikes$n_excluded, 0)
   expect_output(print(rd$grid), "25 flagged spikes excluded")
@@ -54,7 +56,7 @@ test_that("minimum curvature reproduces a plane and honours the data", {
   # minimum curvature overshoots a little between lines at a steep anomaly
   # (the smoothest surface rings); a few percent of the range is normal
   a <- res$grid
-  rng <- range(res$survey$mag_lev, na.rm = TRUE)
+  rng <- range(res$survey[[a$channel]], na.rm = TRUE)
   expect_gte(min(a$z, na.rm = TRUE), rng[1] - 0.1 * diff(rng))
   expect_lte(max(a$z, na.rm = TRUE), rng[2] + 0.1 * diff(rng))
 })

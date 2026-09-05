@@ -29,16 +29,21 @@
 #'   and report the post-levelling residual on the scorecard? Skipped
 #'   silently when there are no crossovers.
 #' @param levelling_order Passed to [level_ties()] as `order`.
-#' @param grid Grid the (levelled) field with [grid_field()] for the map
-#'   layer and the gridded-field panel? Cell size is a quarter of the
-#'   traverse spacing, blanking distance half of it, and samples flagged as
-#'   spikes are left out.
+#' @param igrf Remove the IGRF main field ([igrf_field()])? Adds `mag_igrf`
+#'   and `mag_res` (levelled field minus IGRF) to the survey; skipped
+#'   silently without longitude/latitude.
+#' @param grid Grid the field with [grid_field()] for the map layer and the
+#'   gridded-field panel? Grids the residual when the IGRF was removed,
+#'   otherwise the levelled field. Cell size is a quarter of the traverse
+#'   spacing, blanking distance half of it, and samples flagged as spikes
+#'   are left out.
 #' @return A list of class `magqc_result` with elements `survey` (with a
 #'   `mag_lev` column when levelling ran), `base`, `spec`, `flags`,
 #'   `scorecard`, `lines`, `stats`, `crossovers`, `diurnal` (base-station
 #'   statistics), `fourth_difference` (per-sample series), `heading` (misfit
-#'   by flight direction), `levelling` (a `magqc_levelling`, or `NULL`) and
-#'   `grid` (a `magqc_grid`, or `NULL`).
+#'   by flight direction), `levelling` (a `magqc_levelling`, or `NULL`),
+#'   `igrf` (model, epoch, altitude and `F`/`I`/`D` at the block centre, or
+#'   `NULL`) and `grid` (a `magqc_grid`, or `NULL`).
 #' @examples
 #' res <- run_qc(sim_survey(seed = 3))
 #' res$scorecard
@@ -46,7 +51,7 @@
 #' @export
 run_qc <- function(survey, spec = survey_spec(), base = NULL, plan = NULL,
                    levelling = TRUE, levelling_order = c("linear", "constant"),
-                   grid = TRUE) {
+                   igrf = TRUE, grid = TRUE) {
   if (inherits(survey, "magqc_sim")) {
     if (missing(spec)) spec <- survey$spec
     base <- base %||% survey$base
@@ -87,10 +92,17 @@ run_qc <- function(survey, spec = survey_spec(), base = NULL, plan = NULL,
     heading_error      = check_heading_error(xo, survey, spec),
     levelling_residual = check_levelling_residual(lev, survey, spec))
 
+  igrf_info <- NULL
+  if (isTRUE(igrf) && any(is.finite(survey$lon) & is.finite(survey$lat))) {
+    ri <- .remove_igrf(survey)
+    survey <- ri$survey; igrf_info <- ri$igrf
+  }
+
   # the grid comes after the checks so the flagged spikes can be left out
   grd <- NULL
   if (isTRUE(grid)) {
-    grd <- .grid_survey(survey, channel = if (is.null(lev)) "mag" else "mag_lev",
+    channel <- if (!is.null(igrf_info)) "mag_res" else if (!is.null(lev)) "mag_lev" else "mag"
+    grd <- .grid_survey(survey, channel = channel,
                         cell = spec$line_spacing / 4, method = "mincurv",
                         blank_distance = spec$line_spacing / 2, max_iter = 2000L, tol = 0.01,
                         exclude = checks$spikes$i_start)
@@ -172,6 +184,7 @@ run_qc <- function(survey, spec = survey_spec(), base = NULL, plan = NULL,
     fourth_difference = attr(checks$fourth_difference, "series"),
     heading = attr(checks$heading_error, "by_heading"),
     levelling = lev,
+    igrf = igrf_info,
     grid = grd),
     class = "magqc_result")
 }

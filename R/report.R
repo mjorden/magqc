@@ -125,7 +125,7 @@ qc_map <- function(result, decimate = 5) {
                   north = grid$bounds$north, east = grid$bounds$east))
     m <- leaflet::addLegend(m, position = "topleft", colors = img$legend_colors,
                             labels = img$legend_labels, opacity = 0.9, group = grp,
-                            title = sprintf("%s (nT)", if (grid$channel == "mag_lev") "levelled field" else grid$channel))
+                            title = sprintf("%s (nT)", .channel_label(grid$channel)))
   }
   for (ln in split(s, s$line)) {
     d <- ln[seq(1, nrow(ln), by = decimate), ]

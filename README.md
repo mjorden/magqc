@@ -116,6 +116,22 @@ it; a crossing that survives the correction is flagged, because heading
 error, lag or a bad tie do not level out. The noise checks and the
 heading-error check keep operating on the unlevelled field.
 
+## IGRF removal
+
+```r
+res$igrf
+#> $model "igrf 1.0"  $epoch 2024.45  $altitude 60  $F 52642  $I 68.1  $D 9.8
+igrf_field(-108.5, 43.2, as.POSIXct("2024-06-14", tz = "UTC"), altitude = 1600)
+```
+
+`run_qc()` evaluates the IGRF main field (the `igrf` package) on a small
+lattice over the block at the survey epoch and altitude, interpolates it
+to every sample, and adds `mag_igrf` and the residual `mag_res` (levelled
+field minus IGRF). The residual is what gets gridded and mapped, and its
+inclination and declination are what reduction to the pole needs. The
+simulated survey's regional is synthetic, so its residual carries a
+constant offset - the map shows the anomalies either way.
+
 ## Gridded field
 
 ```r
@@ -127,7 +143,8 @@ g <- grid_field(res, cell = 25, method = "idw")   # or grid any channel yourself
 plot_grid(res)
 ```
 
-`run_qc()` grids the levelled field by **minimum curvature** (Briggs 1974)
+`run_qc()` grids the residual field (or the levelled field when there is no
+IGRF) by **minimum curvature** (Briggs 1974)
 at a quarter of the traverse spacing: samples are binned to the nearest
 node as a local plane evaluated at the node (a plain mean sits at the
 sample centroid, half a cell off at line ends), free nodes satisfy the
@@ -255,10 +272,10 @@ report render.
 ## Not yet
 
 - statistical levelling and micro-levelling (tie-line levelling is in)
-- IGRF removal and lag correction (the field is handled as total field; no
-  residual/anomaly channel yet)
-- reduction to the pole (the grid is in; needs IGRF inclination and
-  declination) and other grid filters (upward continuation, derivatives)
+- lag correction
+- reduction to the pole (the residual grid and the IGRF inclination and
+  declination are in; the FFT filter is not) and other grid filters
+  (upward continuation, derivatives)
 - reading a flight plan from KML / Geosoft PLT
 - gradiometer and multi-sensor configurations
 

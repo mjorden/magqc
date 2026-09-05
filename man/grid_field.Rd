@@ -19,8 +19,9 @@ grid_field(
 \item{x}{A \code{magqc_result} (cell and blanking default from its spec) or a
 \code{magqc_survey} (then \code{cell} is required).}
 
-\item{channel}{Field column to grid. Defaults to \code{mag_lev} when levelling
-ran, otherwise \code{mag}.}
+\item{channel}{Field column to grid. Defaults to the residual \code{mag_res}
+when the IGRF was removed, else \code{mag_lev} when levelling ran, else
+\code{mag}.}
 
 \item{cell}{Grid cell size, m. Defaults to a quarter of the traverse
 spacing, the usual choice for line data.}

@@ -103,7 +103,8 @@ ui <- page_sidebar(
         card(card_header("Terrain clearance"), plotly::plotlyOutput("clearance", height = "320px")),
         card(card_header("Base station"), plotly::plotlyOutput("diurnal", height = "320px")),
         card(card_header("Crossover misfit"), plotly::plotlyOutput("crossovers", height = "320px")),
-        card(card_header("Gridded field"), plotly::plotlyOutput("grid", height = "640px"), full_screen = TRUE))),
+        card(card_header("Gridded field"), plotly::plotlyOutput("grid", height = "640px"), full_screen = TRUE),
+        card(card_header("Reduced to the pole"), plotly::plotlyOutput("rtp", height = "640px"), full_screen = TRUE))),
     nav_panel("Lines", DT::DTOutput("lines")))
 )
 
@@ -230,6 +231,10 @@ server <- function(input, output, session) {
   output$grid <- plotly::renderPlotly({
     req(res()); p <- plot_grid(res())
     validate(need(!is.null(p), "No grid (run_qc(grid = TRUE)).")); p
+  })
+  output$rtp <- plotly::renderPlotly({
+    req(res()); p <- plot_grid(res(), "rtp")
+    validate(need(!is.null(p), "No pole reduction (needs longitude/latitude for the IGRF).")); p
   })
 
   output$flags_csv <- downloadHandler(

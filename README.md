@@ -162,6 +162,32 @@ surface that reduction to the pole will operate on.
 
 ![The same grid as the report's gridded-field panel, in the survey's local frame](man/figures/report-grid.png)
 
+## Reduction to the pole
+
+```r
+res$rtp
+#> <magqc grid, reduced to the pole>
+#>   57 x 141 nodes at 50 m; I 68.1 deg, D 9.8 deg (amplitude inclination 68 deg); ...
+r <- reduce_to_pole(res$grid, inclination = 68.1, declination = 9.8)
+plot_grid(res, "rtp")
+```
+
+The residual grid is transformed to the anomaly the same sources would
+produce at the magnetic pole - over their sources, symmetric - with the
+wavenumber-domain operator for induced magnetisation in the IGRF direction
+(Blakely 1995). The phase comes from the true inclination and the
+amplitude from an inclination of at least 20° (MacLeod, Jones & Dai 1993),
+which keeps the operator bounded near the magnetic equator and is exact
+elsewhere. Blanked nodes are infilled by minimum curvature for the
+transform and blanked again; the grid is mirror-extended and tapered so the
+periodic transform sees no edge. The test that pins the sign conventions is
+physical: a point dipole's anomaly computed at I = 60°, reduced to the pole,
+matches the same dipole computed in a vertical field (r > 0.995, RMS < 3 %
+of range) and peaks within a cell of the source. On the map it is the
+"Reduced to pole" layer, off by default so it does not cover the residual.
+
+![The residual (left) and the same grid reduced to the pole (right): anomalies move onto their sources and lose the northern low](man/figures/report-rtp.png)
+
 ## Interactive viewer
 
 ```r
@@ -273,9 +299,8 @@ report render.
 
 - statistical levelling and micro-levelling (tie-line levelling is in)
 - lag correction
-- reduction to the pole (the residual grid and the IGRF inclination and
-  declination are in; the FFT filter is not) and other grid filters
-  (upward continuation, derivatives)
+- other grid filters (upward continuation, derivatives, analytic signal);
+  reduction to the pole is in
 - reading a flight plan from KML / Geosoft PLT
 - gradiometer and multi-sensor configurations
 

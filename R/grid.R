@@ -125,6 +125,13 @@ grid_field <- function(x, channel = NULL, cell = NULL, method = c("mincurv", "id
 
 #' @export
 print.magqc_grid <- function(x, ...) {
+  if (identical(x$channel, "rtp")) {
+    cat("<magqc grid, reduced to the pole>\n")
+    cat(sprintf("  %d x %d nodes at %g m; I %.1f deg, D %.1f deg (amplitude inclination %.0f deg); range %.1f to %.1f nT\n",
+                length(x$x), length(x$y), x$cell, attr(x, "inclination"), attr(x, "declination"),
+                attr(x, "amp_inclination"), min(x$z, na.rm = TRUE), max(x$z, na.rm = TRUE)))
+    return(invisible(x))
+  }
   cat("<magqc grid>\n")
   cat(sprintf("  %s: %d x %d nodes at %g m (%s), %d of %d blanked\n", x$channel, length(x$x), length(x$y),
               x$cell, x$method, x$n_blank, x$n_nodes))
@@ -401,10 +408,13 @@ print.magqc_grid <- function(x, ...) {
 #' field values at those quantiles).
 #'
 #' @param x A `magqc_result` with a `grid` element, or a `magqc_grid`.
-#' @return A plotly widget, or `NULL` when there is no grid.
+#' @param layer For a result, `"grid"` (the residual/levelled field grid)
+#'   or `"rtp"` (the same grid reduced to the pole).
+#' @return A plotly widget, or `NULL` when there is no such grid.
 #' @export
-plot_grid <- function(x) {
-  g <- if (inherits(x, "magqc_grid")) x else x$grid
+plot_grid <- function(x, layer = c("grid", "rtp")) {
+  layer <- match.arg(layer)
+  g <- if (inherits(x, "magqc_grid")) x else x[[layer]]
   if (is.null(g)) return(NULL)
   sc <- .grid_scale(g$z, "equalize")
   # equalised values in [0, 1] for colour, real values for hover
@@ -426,6 +436,9 @@ plot_grid <- function(x) {
                  annotations = list(list(
                    xref = "paper", yref = "paper", x = 0, y = 1.02, xanchor = "left", yanchor = "bottom",
                    showarrow = FALSE, font = list(color = .pal$ink2, size = 12),
-                   text = sprintf("%s, %g m cells, %s; RMS fit %.2f nT", .channel_label(g$channel), g$cell,
-                                  if (g$method == "mincurv") "minimum curvature" else "inverse distance", g$rms_fit))))
+                   text = if (g$channel == "rtp") sprintf("%s; I %.1f\u00b0, D %.1f\u00b0, amplitude inclination %.0f\u00b0",
+                                                        .channel_label(g$channel), attr(g, "inclination"),
+                                                        attr(g, "declination"), attr(g, "amp_inclination")) else
+                     sprintf("%s, %g m cells, %s; RMS fit %.2f nT", .channel_label(g$channel), g$cell,
+                             if (g$method == "mincurv") "minimum curvature" else "inverse distance", g$rms_fit))))
 }

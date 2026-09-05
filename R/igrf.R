@@ -80,6 +80,7 @@ igrf_field <- function(lon, lat, time, altitude = 0, n = 5L) {
 #' @noRd
 .channel_label <- function(channel) {
   switch(channel,
+         rtp = "residual field reduced to the pole",
          mag_res = "residual field (IGRF removed)",
          mag_lev = "levelled field",
          mag = "field",

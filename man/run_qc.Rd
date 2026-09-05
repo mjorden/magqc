@@ -12,7 +12,8 @@ run_qc(
   levelling = TRUE,
   levelling_order = c("linear", "constant"),
   igrf = TRUE,
-  grid = TRUE
+  grid = TRUE,
+  rtp = TRUE
 )
 }
 \arguments{
@@ -43,6 +44,10 @@ gridded-field panel? Grids the residual when the IGRF was removed,
 otherwise the levelled field. Cell size is a quarter of the traverse
 spacing, blanking distance half of it, and samples flagged as spikes
 are left out.}
+
+\item{rtp}{Reduce the residual grid to the pole (\code{\link[=reduce_to_pole]{reduce_to_pole()}})
+with the IGRF inclination and declination? Needs both \code{igrf} and
+\code{grid}; skipped silently otherwise.}
 }
 \value{
 A list of class \code{magqc_result} with elements \code{survey} (with a
@@ -51,7 +56,8 @@ A list of class \code{magqc_result} with elements \code{survey} (with a
 statistics), \code{fourth_difference} (per-sample series), \code{heading} (misfit
 by flight direction), \code{levelling} (a \code{magqc_levelling}, or \code{NULL}),
 \code{igrf} (model, epoch, altitude and \code{F}/\code{I}/\code{D} at the block centre, or
-\code{NULL}) and \code{grid} (a \code{magqc_grid}, or \code{NULL}).
+\code{NULL}), \code{grid} (a \code{magqc_grid}, or \code{NULL}) and \code{rtp} (the grid reduced
+to the pole, or \code{NULL}).
 }
 \description{
 Applies the diurnal correction (when a base-station record is supplied),

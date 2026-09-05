@@ -80,8 +80,39 @@ qc_map <- function(result, decimate = 5) {
   s <- result$survey
   flags <- result$flags
   reg <- .check_registry()
-  if (isTRUE(result$stats$has_lonlat)) .leaflet_map(s, flags, reg, decimate, result$grid) else
+  if (isTRUE(result$stats$has_lonlat)) .leaflet_map(s, flags, reg, decimate, result$grid, result$rtp) else
     .plotly_map(s, flags, reg, decimate, result$grid)
+}
+
+#' Add a grid to a leaflet map as an image overlay
+#'
+#' No raster package: the grid is a PNG in its own pane between the tiles
+#' and the lines, registered with leaflet's layer manager under `group` so
+#' the layers control toggles it (and `leaflet::hideGroup()` on the R side
+#' hides it initially - the layer manager has no visibility call of its
+#' own, and an exception here would abort every widget after the map).
+#' Over a survey block the Mercator stretch across the image is negligible.
+#' @noRd
+.add_grid_layer <- function(m, grid, group) {
+  img <- .grid_png(grid)
+  m <- htmlwidgets::onRender(m, "
+    function(el, x, data) {
+      var map = this;
+      if (!map.getPane('magqcGrid')) {
+        map.createPane('magqcGrid');
+        map.getPane('magqcGrid').style.zIndex = 250;
+      }
+      var img = L.imageOverlay(data.url, [[data.south, data.west], [data.north, data.east]],
+                               {opacity: data.opacity, pane: 'magqcGrid', interactive: false});
+      map.layerManager.addLayer(img, 'image', data.id, data.group);
+    }",
+    data = list(url = paste0("data:image/png;base64,", img$base64), group = group, opacity = 0.75,
+                id = paste0("magqc-", gsub("[^a-z]", "-", tolower(group))),
+                south = grid$bounds$south, west = grid$bounds$west,
+                north = grid$bounds$north, east = grid$bounds$east))
+  leaflet::addLegend(m, position = "topleft", colors = img$legend_colors,
+                     labels = img$legend_labels, opacity = 0.9, group = group,
+                     title = sprintf("%s (nT)", .channel_label(grid$channel)))
 }
 
 .popup <- function(f) {
@@ -95,37 +126,23 @@ qc_map <- function(result, decimate = 5) {
                  ifelse(f$fid_end == f$fid_start, "", paste0("-", f$fid_end)))))
 }
 
-.leaflet_map <- function(s, flags, reg, decimate, grid = NULL) {
+.leaflet_map <- function(s, flags, reg, decimate, grid = NULL, rtp = NULL) {
   m <- leaflet::leaflet(options = leaflet::leafletOptions(preferCanvas = TRUE))
   # OpenStreetMap needs no key; Carto's light basemap now watermarks without one.
   m <- leaflet::addProviderTiles(m, "OpenStreetMap.Mapnik", group = "OpenStreetMap")
   m <- leaflet::addProviderTiles(m, "Esri.WorldImagery", group = "Esri imagery")
   groups <- c("Traverse lines", "Tie lines")
+  hidden <- character(0)
   if (!is.null(grid) && !is.null(grid$bounds)) {
-    # The grid goes in as an image overlay (no raster package needed) in its
-    # own pane between the tiles and the lines, registered with leaflet's
-    # layer manager under a group so the layers control can toggle it. Over a
-    # survey block the Mercator stretch across the image is negligible.
-    img <- .grid_png(grid)
-    grp <- "Gridded field"
-    groups <- c(grp, groups)
-    m <- htmlwidgets::onRender(m, "
-      function(el, x, data) {
-        var map = this;
-        if (!map.getPane('magqcGrid')) {
-          map.createPane('magqcGrid');
-          map.getPane('magqcGrid').style.zIndex = 250;
-        }
-        var img = L.imageOverlay(data.url, [[data.south, data.west], [data.north, data.east]],
-                                 {opacity: data.opacity, pane: 'magqcGrid', interactive: false});
-        map.layerManager.addLayer(img, 'image', 'magqc-grid', data.group);
-      }",
-      data = list(url = paste0("data:image/png;base64,", img$base64), group = grp, opacity = 0.75,
-                  south = grid$bounds$south, west = grid$bounds$west,
-                  north = grid$bounds$north, east = grid$bounds$east))
-    m <- leaflet::addLegend(m, position = "topleft", colors = img$legend_colors,
-                            labels = img$legend_labels, opacity = 0.9, group = grp,
-                            title = sprintf("%s (nT)", .channel_label(grid$channel)))
+    groups <- c("Gridded field", groups)
+    m <- .add_grid_layer(m, grid, "Gridded field")
+    if (!is.null(rtp)) {
+      # the pole-reduced grid starts hidden: two overlays would just cover
+      # each other, and the layers control swaps them with one click
+      groups <- c("Gridded field", "Reduced to pole", groups[-1])
+      hidden <- "Reduced to pole"
+      m <- .add_grid_layer(m, rtp, "Reduced to pole")
+    }
   }
   for (ln in split(s, s$line)) {
     d <- ln[seq(1, nrow(ln), by = decimate), ]
@@ -165,6 +182,7 @@ qc_map <- function(result, decimate = 5) {
   m <- leaflet::addLayersControl(m, baseGroups = c("OpenStreetMap", "Esri imagery"),
                                  overlayGroups = groups,
                                  options = leaflet::layersControlOptions(collapsed = FALSE))
+  if (length(hidden)) m <- leaflet::hideGroup(m, hidden)
   m <- leaflet::addLegend(m, position = "bottomleft",
                           colors = c(.pal$traverse, .pal$tie, .pal$critical),
                           labels = c("traverse line", "tie line", "flagged interval"),

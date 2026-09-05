@@ -37,8 +37,8 @@ save(magick::image_read(tmp), "report-overview.png")
 h <- as.integer(js("document.documentElement.scrollHeight")) + 50L
 b$Emulation$setDeviceMetricsOverride(width = 1280L, height = h, deviceScaleFactor = 1, mobile = FALSE)
 Sys.sleep(8)
-# plotly widgets on the page, in order: gridded field, fourth difference, clearance, base station, crossovers
-js("var p = document.querySelectorAll('.js-plotly-plot'); p[0].id = 'shot-grid'; p[1].id = 'shot-d4'; p[4].id = 'shot-xo'")
+# plotly widgets on the page, in order: gridded field, reduced to pole, fourth difference, clearance, base station, crossovers
+js("var p = document.querySelectorAll('.js-plotly-plot'); p[0].id = 'shot-grid'; p[1].id = 'shot-rtp'; p[2].id = 'shot-d4'; p[5].id = 'shot-xo'")
 b$screenshot(tmp, selector = "html", scale = scale, show = FALSE)
 full <- magick::image_read(tmp)
 crop <- function(sel, file, pad = 8) {
@@ -49,6 +49,13 @@ crop <- function(sel, file, pad = 8) {
 }
 crop(".leaflet-container", "report-map.png")
 crop("#shot-grid", "report-grid.png")
+# residual and pole-reduced side by side, each trimmed to the plot area
+panel <- function(sel) {
+  r <- unlist(js(sprintf("(function(){var e=document.querySelector('%s'); var r=e.getBoundingClientRect(); var s=e.querySelector('.subplot.xy .gridlayer')||e; var q=(e.querySelector('.cartesianlayer')||e).getBoundingClientRect(); return [q.left,q.top,q.width,q.height];})()", sel)))
+  g <- sprintf("%dx%d+%d+%d", round((r[3] + 80) * scale), round((r[4] + 60) * scale), round((r[1] - 60) * scale), round((r[2] - 20) * scale))
+  magick::image_crop(full, g)
+}
+save(magick::image_append(c(panel("#shot-grid"), panel("#shot-rtp"))), "report-rtp.png")
 crop("#shot-xo", "report-crossovers.png")
 crop("#shot-d4", "report-fourth-difference.png")
 

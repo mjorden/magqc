@@ -4,13 +4,16 @@
 \alias{plot_grid}
 \title{Gridded field}
 \usage{
-plot_grid(x)
+plot_grid(x, layer = c("grid", "rtp"))
 }
 \arguments{
 \item{x}{A \code{magqc_result} with a \code{grid} element, or a \code{magqc_grid}.}
+
+\item{layer}{For a result, \code{"grid"} (the residual/levelled field grid)
+or \code{"rtp"} (the same grid reduced to the pole).}
 }
 \value{
-A plotly widget, or \code{NULL} when there is no grid.
+A plotly widget, or \code{NULL} when there is no such grid.
 }
 \description{
 Plotly heatmap of a \code{\link[=grid_field]{grid_field()}} result in the survey's local frame,

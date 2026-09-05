@@ -37,13 +37,17 @@
 #'   otherwise the levelled field. Cell size is a quarter of the traverse
 #'   spacing, blanking distance half of it, and samples flagged as spikes
 #'   are left out.
+#' @param rtp Reduce the residual grid to the pole ([reduce_to_pole()])
+#'   with the IGRF inclination and declination? Needs both `igrf` and
+#'   `grid`; skipped silently otherwise.
 #' @return A list of class `magqc_result` with elements `survey` (with a
 #'   `mag_lev` column when levelling ran), `base`, `spec`, `flags`,
 #'   `scorecard`, `lines`, `stats`, `crossovers`, `diurnal` (base-station
 #'   statistics), `fourth_difference` (per-sample series), `heading` (misfit
 #'   by flight direction), `levelling` (a `magqc_levelling`, or `NULL`),
 #'   `igrf` (model, epoch, altitude and `F`/`I`/`D` at the block centre, or
-#'   `NULL`) and `grid` (a `magqc_grid`, or `NULL`).
+#'   `NULL`), `grid` (a `magqc_grid`, or `NULL`) and `rtp` (the grid reduced
+#'   to the pole, or `NULL`).
 #' @examples
 #' res <- run_qc(sim_survey(seed = 3))
 #' res$scorecard
@@ -51,7 +55,7 @@
 #' @export
 run_qc <- function(survey, spec = survey_spec(), base = NULL, plan = NULL,
                    levelling = TRUE, levelling_order = c("linear", "constant"),
-                   igrf = TRUE, grid = TRUE) {
+                   igrf = TRUE, grid = TRUE, rtp = TRUE) {
   if (inherits(survey, "magqc_sim")) {
     if (missing(spec)) spec <- survey$spec
     base <- base %||% survey$base
@@ -106,6 +110,10 @@ run_qc <- function(survey, spec = survey_spec(), base = NULL, plan = NULL,
                         cell = spec$line_spacing / 4, method = "mincurv",
                         blank_distance = spec$line_spacing / 2, max_iter = 2000L, tol = 0.01,
                         exclude = checks$spikes$i_start)
+  }
+  rtp_grid <- NULL
+  if (isTRUE(rtp) && !is.null(grd) && !is.null(igrf_info) && grd$channel == "mag_res") {
+    rtp_grid <- reduce_to_pole(grd, igrf_info$I, igrf_info$D)
   }
 
   flags <- .bind_flags(unname(checks))
@@ -185,7 +193,8 @@ run_qc <- function(survey, spec = survey_spec(), base = NULL, plan = NULL,
     heading = attr(checks$heading_error, "by_heading"),
     levelling = lev,
     igrf = igrf_info,
-    grid = grd),
+    grid = grd,
+    rtp = rtp_grid),
     class = "magqc_result")
 }
 

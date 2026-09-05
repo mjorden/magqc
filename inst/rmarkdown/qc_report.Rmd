@@ -115,6 +115,15 @@ if (!is.null(res$grid)) cat(sprintf("### Gridded field\n\n%s gridded by %s at %g
 if (!is.null(res$grid)) magqc:::.slim(magqc::plot_grid(res))
 ```
 
+```{r rtp-hdr, results="asis"}
+if (!is.null(res$rtp)) cat(sprintf("### Reduced to the pole\n\nThe residual grid transformed to the anomaly the same sources would produce at the magnetic pole, so anomalies sit over their sources and are symmetric: wavenumber-domain operator for an induced magnetisation in the IGRF direction (I %.1f°, D %.1f°), phase from that inclination and amplitude from an inclination of at least %.0f° to keep the operator bounded at low latitudes. Blanked nodes are infilled for the transform and blanked again after. Available as the \"Reduced to pole\" layer on the map.\n",
+  attr(res$rtp, "inclination"), attr(res$rtp, "declination"), attr(res$rtp, "amp_inclination")))
+```
+
+```{r rtp, fig.width=10, fig.height=8.5}
+if (!is.null(res$rtp)) magqc:::.slim(magqc::plot_grid(res, "rtp"))
+```
+
 ## Flagged intervals
 
 ```{r flags}

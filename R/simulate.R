@@ -43,6 +43,8 @@
 #' @param defects Inject defects?
 #' @param seed Random seed.
 #'
+#' @seealso [sim_raw_files()] to write the survey out as raw instrument and
+#'   GPS logs.
 #' @return A list of class `magqc_sim` with elements `data` (an
 #'   [as_survey()] tibble), `base` (base-station tibble: `time`,
 #'   `mag_base`), `truth` (tibble of injected defects with the time window

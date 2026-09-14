@@ -91,3 +91,7 @@ sim <- sim_survey(seed = 1)
 nrow(sim$data)
 sim$truth
 }
+\seealso{
+\code{\link[=sim_raw_files]{sim_raw_files()}} to write the survey out as raw instrument and
+GPS logs.
+}

@@ -212,6 +212,35 @@ publishes it to GitHub Pages on every push to `main`. The in-browser build
 cannot render the HTML report (no pandoc), so that button is replaced by a
 note; everything else works, including uploads.
 
+## Raw instrument and GPS files
+
+```r
+mag <- read_mag_log("flight.mag", mag_format("geometrics"), date = "2024-06-14")
+gps <- read_nmea("flight.nmea")                     # GGA / RMC / ZDA, checksums verified
+raw <- merge_streams(mag, gps, lag = 0.3)           # GPS onto the magnetometer clock
+survey <- as_survey(assign_lines(raw))              # straight runs -> L1000..., T9000...
+res <- run_qc(survey, base = base)
+```
+
+Before there is an XYZ file there are two streams: the magnetometer's
+(field, signal, time) and the GPS receiver's (NMEA). `read_nmea()` parses
+`GGA`, `RMC` and `ZDA` from any talker, verifies checksums, takes the date
+from the log when it has one, and notices midnight. `read_mag_log()` reads
+any line-oriented log from a `mag_format()` description (kept lines,
+separator, column positions, how the time is written); the `"geometrics"`
+and `"gem"` presets are written from the vendor documentation and should
+be checked against your files. `merge_streams()` interpolates the fixes
+onto each magnetometer sample after shifting the GPS clock by `lag`, and
+drops samples that fall in a GPS outage. `assign_lines()` finds straight
+flight from the smoothed heading, drops the turns, numbers traverses
+across the block and ties along it, and takes names from a flight plan
+when one is supplied.
+
+`sim_raw_files()` writes a simulated survey out as exactly that pair of
+files, turns included, so the whole path is tested as a round trip: the
+survey read back from the raw files reproduces the simulated positions to
+under a metre, and `run_qc()` flags every injected defect on the same line.
+
 ## Input data
 
 `read_xyz()` parses the Geosoft-style ASCII interchange format most
